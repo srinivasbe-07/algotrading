@@ -43,9 +43,16 @@ shortTargetReached = close <= entryPrice * (1 - targetProfit)
 newSwingHigh = longTargetReached ? ta.highest(high, totalCandle)[1] : entrySwingHigh
 newSwingLow = shortTargetReached ? ta.lowest(low, totalCandle)[1] : entrySwingLow
 
-// Exit Conditions
-longExit = longTargetReached ? ((close > newSwingLow and close < swingHigh) or ta.crossunder(close, newSwingLow)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossunder(close, entrySwingLow)) and longC != 0
-shortExit = shortTargetReached ? ((close < swingHigh and close > newSwingLow) or ta.crossover(close, swingHigh)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossover(close, entrySwingHigh)) and shortC != 0
+
+// Exit condition at 3:16 PM for intraday
+exitHour = 15
+exitMinute = 16
+timeExit = (postionalType == "Intraday" and hour == exitHour and minute == exitMinute)
+
+// Modify the existing exit condition to include 3 PM exit for intraday
+longExit = timeExit or (longTargetReached ? ((close > newSwingLow and close < swingHigh) or ta.crossunder(close, newSwingLow)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossunder(close, entrySwingLow))) and longC != 0
+shortExit = timeExit or (shortTargetReached ? ((close < swingHigh and close > newSwingLow) or ta.crossover(close, swingHigh)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossover(close, entrySwingHigh))) and shortC != 0
+
 
 // Reset positions on exit
 if longExit or shortExit
