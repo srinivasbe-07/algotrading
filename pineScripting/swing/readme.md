@@ -13,6 +13,8 @@
 - 📅 **Options Trading Support**: Supports trading based on selected weekdays for options strategies.
 - 🎯 **Target Profit**: 0.5% default profit target with customizable settings.
 - 🔔 **Alerts**: Notifies you of entry and exit signals with TradingView alerts.
+- 🕒 **3:16 PM Exit for Intraday**: Automatically exits all open positions at 3:16 PM for intraday trading.
+
 
 ---
 
@@ -26,8 +28,8 @@
 
 ## ⚙️ Parameters
 
-| Parameter        | Description                                           | Default       |
-|------------------|-------------------------------------------------------|---------------|
+| Parameter        | Description                                            | Default       |
+|------------------|--------------------------------------------------------|---------------|
 | **Length**       | Number of candles used to calculate swing highs/lows   | 10            |
 | **Position Type**| Select between **Positional** and **Intraday** modes   | Positional    |
 | **Options Day**  | Choose the day of the week for options trading         | Thursday      |
@@ -47,12 +49,12 @@
 
 ## 🔔 Alerts
 
-| Alert Type       | Trigger Condition                                     |
-|------------------|-------------------------------------------------------|
-| **Long Entry**   | When price crosses above the swing high               |
-| **Short Entry**  | When price crosses below the swing low                |
-| **Long Exit**    | When long position exit conditions are met            |
-| **Short Exit**   | When short position exit conditions are met           |
+| Alert Type       | Trigger Condition                                                  |
+|------------------|--------------------------------------------------------------------|
+| **Long Entry**   | When price crosses above the swing high                            |
+| **Short Entry**  | When price crosses below the swing low                             |
+| **Long Exit**    | When long position exit conditions are met or at 3:16 PM           |
+| **Short Exit**   | When short position exit conditions are met or at 3:16 PM          |
 
 ---
 
