@@ -1,0 +1,100 @@
+//@version=5
+indicator("srini Swing indicator", overlay=true, timeframe="", timeframe_gaps=true)
+
+// Input Parameters
+totalCandle = input(10, title="Length")  // Number of candles to consider for swing high/low
+postionalType = input.string("Positional", title="Position Type", options=["Intraday", "Positional"])  // Type of trading strategy
+var int selectedDayOfWeek = na  // Variable to store the selected day of the week for options trading
+
+// Select the first day of the week for options trading
+firstDay = input.string("Thursday", title="Select Options First Day", options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"])
+
+// Determine the day of the week number based on user input
+if (postionalType == 'Positional')
+    if (firstDay == "Monday")
+        selectedDayOfWeek := dayofweek.monday
+    else if (firstDay == "Tuesday")
+        selectedDayOfWeek := dayofweek.tuesday
+    else if (firstDay == "Wednesday")
+        selectedDayOfWeek := dayofweek.wednesday
+    else if (firstDay == "Thursday")
+        selectedDayOfWeek := dayofweek.thursday
+    else if (firstDay == "Friday")
+        selectedDayOfWeek := dayofweek.friday
+
+// Calculate Swing High and Low based on the specified number of candles
+swingHigh = ta.highest(high, totalCandle)[1]  // Get the highest high from the previous `totalCandle` candles
+swingLow = ta.lowest(low, totalCandle)[1]  // Get the lowest low from the previous `totalCandle` candles
+var int longC = 0  // Counter for long positions
+var int shortC = 0  // Counter for short positions
+
+// Variables to store entry levels for exits
+var float entryPrice = na  // Store entry price
+var float entrySwingHigh = na  // Highest price at long entry
+var float entrySwingLow = na  // Lowest price at long entry
+// Define target profit percentage
+targetProfit = 0.005  // 0.5% target profit
+
+// Check if target profit has been reached for long and short positions
+longTargetReached = close >= entryPrice * (1 + targetProfit)
+shortTargetReached = close <= entryPrice * (1 - targetProfit)
+
+// Use new swing high/low for exit after target is reached
+newSwingHigh = longTargetReached ? ta.highest(high, totalCandle)[1] : entrySwingHigh
+newSwingLow = shortTargetReached ? ta.lowest(low, totalCandle)[1] : entrySwingLow
+
+// Exit Conditions
+longExit = longTargetReached ? ((close > newSwingLow and close < swingHigh) or ta.crossunder(close, newSwingLow)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossunder(close, entrySwingLow)) and longC != 0
+shortExit = shortTargetReached ? ((close < swingHigh and close > newSwingLow) or ta.crossover(close, swingHigh)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossover(close, entrySwingHigh)) and shortC != 0
+
+// Reset positions on exit
+if longExit or shortExit
+    longC := 0  // Reset long counter
+    shortC := 0  // Reset short counter
+    entryPrice := na  // Reset entry price
+    entrySwingHigh := na  // Reset entry swing high
+    entrySwingLow := na  // Reset entry swing low
+
+// Reset positions on a new day for intraday trades
+if postionalType == "Intraday" and dayofweek != dayofweek[1]
+    longC := 0  // Reset long counter
+    shortC := 0  // Reset short counter
+    entryPrice := na  // Reset entry price
+    entrySwingHigh := na  // Reset entry swing high
+    entrySwingLow := na  // Reset entry swing low
+
+// Check if today matches the selected weekday for options trading
+if dayofweek == selectedDayOfWeek and dayofweek != dayofweek[1]
+    longC := 0  // Reset long counter
+    shortC := 0  // Reset short counter
+    entryPrice := na  // Reset entry price
+    entrySwingHigh := na  // Reset entry swing high
+    entrySwingLow := na  // Reset entry swing low
+
+// Long Entry Condition - Detecting the crossover above swing high
+long = (longC == 0 and shortC == 0 and ta.crossover(close, swingHigh))
+if long
+    entryPrice := close  // Store the entry price
+    entrySwingHigh := swingHigh  // Store the entry swing high
+    entrySwingLow := swingLow  // Store the entry swing low
+    longC := 1  // Mark long position as open
+
+// Short Entry Condition - Detecting the crossover below swing low
+short = (longC == 0 and shortC == 0 and ta.crossunder(close, swingLow))
+if short
+    entryPrice := close  // Store the entry price
+    entrySwingHigh := swingHigh  // Store the entry swing high
+    entrySwingLow := swingLow  // Store the entry swing low
+    shortC := 1  // Mark short position as open
+
+// Plotting Entry and Exit Signals
+plotshape(long, title='Long Entry', style=shape.arrowup, location=location.abovebar, color=color.green, text='long', textcolor=color.green)  // Plot long entry signal
+plotshape(short, title='Short Entry', style=shape.arrowdown, location=location.abovebar, color=color.green, text='short', textcolor=color.green)  // Plot short entry signal
+plotshape(longExit, title='Long Exit', style=shape.arrowdown, location=location.belowbar, color=color.red, text='lExit', textcolor=color.red)  // Plot long exit signal
+plotshape(shortExit, title='Short Exit', style=shape.arrowdown, location=location.belowbar, color=color.red, text='sExit', textcolor=color.red)  // Plot short exit signal
+
+// Alerts for Entries and Exits
+alertcondition(long, title='Long Entry', message='Long Entry')  // Alert for long entry
+alertcondition(longExit, title='Long Exit', message='Long Exit')  // Alert for long exit
+alertcondition(short, title='Short Entry', message='Short Entry')  // Alert for short entry
+alertcondition(shortExit, title='Short Exit', message='Short Exit')  // Alert for short exit
