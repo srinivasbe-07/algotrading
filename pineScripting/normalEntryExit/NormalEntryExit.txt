@@ -1,0 +1,56 @@
+//@version=5
+indicator("Entry/Exit Alert Script with Horizontal Lines", overlay=true)
+
+// Input for entry, target, and stop loss prices
+// These can be manually input by the user
+entryPrice = input.float(title="Entry Price", defval=0.0, step=0.1)
+targetPrice = input.float(title="Target Price", defval=0.0, step=0.1)
+stoplossPrice = input.float(title="Stoploss Price", defval=0.0, step=0.1)
+
+// Calculate default target and stop loss if not provided
+// Default target is 0.5% above entry price, and stop loss is 0.5% below entry
+if targetPrice == 0.0
+    targetPrice := entryPrice + (entryPrice * 0.005)  // Default target
+
+if stoplossPrice == 0.0
+    stoplossPrice := entryPrice - (entryPrice * 0.005)  // Default stop loss
+
+// Initialize counters for long and short positions
+var int longC = 0  // Counter for long positions
+var int shortC = 0  // Counter for short positions
+
+// Exit conditions for long and short positions
+// Long exits if price crosses below stop loss or above target
+// Short exits if price crosses below target or above stop loss
+longExit = (ta.crossunder(close, stoplossPrice) or ta.crossover(close, targetPrice)) and longC != 0
+shortExit = (ta.crossunder(close, targetPrice) or ta.crossover(close, stoplossPrice)) and shortC != 0
+
+// If a long or short exit condition is met, reset the counters
+if (longExit or shortExit)
+    longC := 0
+    shortC := 0
+    // Optionally reset the prices to prompt new inputs, if needed
+    // entryPrice := 0.0  // Resetting to zero might not be ideal for continuous trading
+    // stoplossPrice := 0.0
+    // targetPrice := 0.0
+
+// Long entry condition: when the close price crosses above entry price and no current position
+long = (longC == 0 and shortC == 0 and ta.crossover(close, entryPrice))
+if long 
+    longC := 1  // Set long position active
+
+// Short entry condition: when the close price crosses below entry price and no current position
+short = (longC == 0 and shortC == 0 and ta.crossunder(close, entryPrice))
+if short 
+    shortC := 1  // Set short position active
+
+// Plot horizontal lines for entry, target, and stop loss prices on the chart
+plot(entryPrice, title="Entry Price", color=color.blue, linewidth=2, style=plot.style_line)
+plot(targetPrice, title="Target Price", color=color.green, linewidth=2, style=plot.style_line)
+plot(stoplossPrice, title="Stoploss Price", color=color.red, linewidth=2, style=plot.style_line)
+
+// Create alert conditions for different signals
+alertcondition(long, title="Long Entry", message="Long Entry triggered")
+alertcondition(longExit, title="Long Exit", message="Long Exit triggered")
+alertcondition(short, title="Short Entry", message="Short Entry triggered")
+alertcondition(shortExit, title="Short Exit", message="Short Exit triggered")
