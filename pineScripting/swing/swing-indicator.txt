@@ -78,8 +78,11 @@ if dayofweek == selectedDayOfWeek and dayofweek != dayofweek[1]
     entrySwingHigh := na  // Reset entry swing high
     entrySwingLow := na  // Reset entry swing low
 
+// Check if current time is after 3:15 PM
+timeRestriction = (postionalType == "Intraday" and (hour == 15 and minute >= 15))
+
 // Long Entry Condition - Detecting the crossover above swing high
-long = (longC == 0 and shortC == 0 and ta.crossover(close, swingHigh))
+long = (longC == 0 and shortC == 0 and ta.crossover(close, swingHigh) and not timeRestriction)
 if long
     entryPrice := close  // Store the entry price
     entrySwingHigh := swingHigh  // Store the entry swing high
@@ -87,13 +90,13 @@ if long
     longC := 1  // Mark long position as open
 
 // Short Entry Condition - Detecting the crossover below swing low
-short = (longC == 0 and shortC == 0 and ta.crossunder(close, swingLow))
+short = (longC == 0 and shortC == 0 and ta.crossunder(close, swingLow) and not timeRestriction)
 if short
     entryPrice := close  // Store the entry price
     entrySwingHigh := swingHigh  // Store the entry swing high
     entrySwingLow := swingLow  // Store the entry swing low
     shortC := 1  // Mark short position as open
-
+	
 // Plotting Entry and Exit Signals
 plotshape(long, title='Long Entry', style=shape.arrowup, location=location.abovebar, color=color.green, text='long', textcolor=color.green)  // Plot long entry signal
 plotshape(short, title='Short Entry', style=shape.arrowdown, location=location.abovebar, color=color.green, text='short', textcolor=color.green)  // Plot short entry signal

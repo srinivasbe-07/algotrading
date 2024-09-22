@@ -43,9 +43,14 @@ shortTargetReached = close <= entryPrice * (1 - targetProfit)
 newSwingHigh = longTargetReached ? ta.highest(high, totalCandle)[1] : entrySwingHigh
 newSwingLow = shortTargetReached ? ta.lowest(low, totalCandle)[1] : entrySwingLow
 
-// Exit Conditions
-longExit = longTargetReached ? ((close > newSwingLow and close < swingHigh) or ta.crossunder(close, newSwingLow)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossunder(close, entrySwingLow)) and longC != 0
-shortExit = shortTargetReached ? ((close < swingHigh and close > newSwingLow) or ta.crossover(close, swingHigh)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossover(close, entrySwingHigh)) and shortC != 0
+// Exit condition at 3:16 PM for intraday
+exitHour = 15
+exitMinute = 16
+timeExit = (postionalType == "Intraday" and hour == exitHour and minute == exitMinute)
+
+// Modify the existing exit condition to include 3 PM exit for intraday
+longExit = timeExit or (longTargetReached ? ((close > newSwingLow and close < swingHigh) or ta.crossunder(close, newSwingLow)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossunder(close, entrySwingLow))) and longC != 0
+shortExit = timeExit or (shortTargetReached ? ((close < swingHigh and close > newSwingLow) or ta.crossover(close, swingHigh)) : ((close > entrySwingLow and close < entrySwingHigh) or ta.crossover(close, entrySwingHigh))) and shortC != 0
 
 // Reset positions on exit
 if longExit or shortExit
@@ -72,7 +77,7 @@ if dayofweek == selectedDayOfWeek and dayofweek != dayofweek[1]
     entrySwingLow := na  // Reset entry swing low
 
 // Long Entry Condition - Detecting the crossover above swing high
-long = (longC == 0 and shortC == 0 and ta.crossover(close, swingHigh))
+long = (longC == 0 and shortC == 0 and ta.crossover(close, swingHigh) and not timeRestriction)
 if long
     entryPrice := close  // Store the entry price
     entrySwingHigh := swingHigh  // Store the entry swing high
@@ -81,7 +86,7 @@ if long
 	strategy.entry("Long", strategy.long, comment="Long")
 
 // Short Entry Condition - Detecting the crossover below swing low
-short = (longC == 0 and shortC == 0 and ta.crossunder(close, swingLow))
+short = (longC == 0 and shortC == 0 and ta.crossunder(close, swingLow) and not timeRestriction)
 if short
     entryPrice := close  // Store the entry price
     entrySwingHigh := swingHigh  // Store the entry swing high

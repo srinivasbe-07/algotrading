@@ -14,6 +14,7 @@
 - 🎯 **Target Profit**: 0.5% default profit target with customizable settings.
 - 🔔 **Alerts**: Notifies you of entry and exit signals with TradingView alerts.
 - 🕒 **3:16 PM Exit for Intraday**: Automatically exits all open positions at 3:16 PM for intraday trading.
+- 🕒 **No new Entry after 3:15 PM for Intraday**: Not allow any long or short position after 3:15 PM for intraday trading.
 
 
 ---
@@ -40,21 +41,21 @@
 ## 📊 Example Signals
 
 ### Long Entry
-- **Condition**: Price crosses above the swing high.
+- **Condition**: Price crosses above the swing high or No entry after 3:15 PM for entry position. 
   
 ### Short Entry
-- **Condition**: Price crosses below the swing low.
+- **Condition**: Price crosses below the swing low or No entry after 3:15 PM for entry position.
 
 ---
 
 ## 🔔 Alerts
 
-| Alert Type       | Trigger Condition                                                  |
-|------------------|--------------------------------------------------------------------|
-| **Long Entry**   | When price crosses above the swing high                            |
-| **Short Entry**  | When price crosses below the swing low                             |
-| **Long Exit**    | When long position exit conditions are met or at 3:16 PM           |
-| **Short Exit**   | When short position exit conditions are met or at 3:16 PM          |
+| Alert Type       | Trigger Condition                                                                    |
+|------------------|--------------------------------------------------------------------------------------|
+| **Long Entry**   | When price crosses above the swing high or No entry after 3:15 PM for entry position.|
+| **Short Entry**  | When price crosses below the swing low or No entry after 3:15 PM for entry position. |
+| **Long Exit**    | When long position exit conditions are met or at 3:16 PM for intraday trading.       |
+| **Short Exit**   | When short position exit conditions are met or at 3:16 PM for intraday trading.      |
 
 ---
 
