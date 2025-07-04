@@ -1,0 +1,56 @@
+//@version=5
+indicator("20 EMA + SuperTrend (Smart Alerts + Labels)", overlay=true)
+
+// Inputs
+emaLength = input(20, "20 EMA Length")
+atrLength = input(10, "SuperTrend ATR Length")
+factor = input(3.5, "SuperTrend Multiplier")
+
+// Calculate Indicators
+ema20 = ta.ema(close, emaLength)
+[superTrend, direction] = ta.supertrend(factor, atrLength)
+isUpTrend = direction < 0 
+isDownTrend = direction > 0 
+
+// Conditions
+longEntry = close > ema20 and isUpTrend and close > superTrend and barstate.isconfirmed
+shortEntry = close < ema20 and isDownTrend and close < superTrend and barstate.isconfirmed
+longExit = close < superTrend and barstate.isconfirmed
+shortExit = close > superTrend and barstate.isconfirmed
+
+// State Tracking (Avoid Duplicate Signals)
+var bool inLong = false
+var bool inShort = false
+
+// Check for Valid Entries/Exits
+enterLong = longEntry and not inLong
+enterShort = shortEntry and not inShort
+exitLong = longExit and inLong
+exitShort = shortExit and inShort
+
+// Update State
+if enterLong
+    inLong := true
+    inShort := false
+else if enterShort
+    inShort := true
+    inLong := false
+else if exitLong
+    inLong := false
+else if exitShort
+    inShort := false
+
+// ===== PLOTTING & LABELS ===== //
+// 1. Plot EMA & SuperTrend
+plot(ema20, "20 EMA", color=color.new(color.blue, 0), linewidth=1)
+plot(superTrend, "SuperTrend", color=isUpTrend ? color.green : color.red, linewidth=2)
+// Plot position signals
+plotshape(enterLong, title="Long Entry", style=shape.arrowup, location=location.abovebar, color=color.green, text="Long")
+plotshape(exitLong, title="Long Exit", style=shape.arrowdown, location=location.belowbar, color=color.red, text="Exit Long")
+plotshape(enterShort, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.green, text="Short")
+plotshape(exitShort, title="Short Exit", style=shape.arrowup, location=location.belowbar, color=color.red, text="Exit Short")
+// ===== ALERTS ===== //
+alertcondition(enterLong,  "Long Entry Alert",  "20 EMA + SuperTrend: BUY")
+alertcondition(enterShort, "Short Entry Alert", "20 EMA + SuperTrend: SELL")
+alertcondition(exitLong,   "Long Exit Alert",   "20 EMA + SuperTrend: CLOSE LONG")
+alertcondition(exitShort,  "Short Exit Alert",  "20 EMA + SuperTrend: CLOSE SHORT")

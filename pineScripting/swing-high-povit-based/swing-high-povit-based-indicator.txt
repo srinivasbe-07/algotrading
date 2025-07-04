@@ -1,0 +1,80 @@
+//@version=5
+indicator("Swing High/Low Breakout - Pivot Based", overlay=true)
+
+// Input parameters
+leftBars = input.int(8, "Left Bars for Swing", minval=1)
+rightBars = input.int(2, "Right Bars for Swing", minval=1)
+
+// Initialize position counters
+var int longC = 0    // Long position counter
+var int shortC = 0   // Short position counter
+
+// Identify swing highs and lows using pivot functions
+swingHigh = ta.pivothigh(leftBars, rightBars)
+swingLow = ta.pivotlow(leftBars, rightBars)
+
+// Variables to store confirmed swing levels
+var float lastSwingHigh = na
+var float lastSwingLow = na
+var int lastSwingHighBar = na
+var int lastSwingLowBar = na
+// Convert expiry to timestamp
+
+if dayofweek == 5 and dayofweek != dayofweek[1]
+    longC:=0
+    shortC:=0
+    lastSwingHigh := na
+    lastSwingLow := na
+    lastSwingHighBar := na
+    lastSwingLowBar := na
+// Update swing levels on confirmed pivots
+if not na(swingHigh)
+    lastSwingHigh := swingHigh
+    lastSwingHighBar := bar_index[rightBars]
+
+if not na(swingLow)
+    lastSwingLow := swingLow
+    lastSwingLowBar := bar_index[rightBars]
+
+// Draw and maintain swing lines
+var line highLine = na
+var line lowLine = na
+
+if not na(lastSwingHigh) and not na(lastSwingHighBar)
+    line.delete(highLine)
+    highLine := line.new(lastSwingHighBar, lastSwingHigh, bar_index, lastSwingHigh, color=color.blue, extend=extend.right)
+
+if not na(lastSwingLow) and not na(lastSwingLowBar)
+    line.delete(lowLine)
+    lowLine := line.new(lastSwingLowBar, lastSwingLow, bar_index, lastSwingLow, color=color.orange, extend=extend.right)
+
+// Position Logic
+// Long and Short Exit conditions (evaluated first)
+longExit = longC != 0 and not na(lastSwingLow) and ta.crossunder(close, lastSwingLow) and barstate.isconfirmed
+if longExit
+    longC := 0
+
+shortExit = shortC != 0 and not na(lastSwingHigh) and ta.crossover(close, lastSwingHigh) and barstate.isconfirmed
+if shortExit
+    shortC := 0
+
+// Entry conditions for Long and Short (after exits)
+longEntry = longC == 0 and shortC == 0 and not na(lastSwingHigh) and ta.crossover(close, lastSwingHigh) and barstate.isconfirmed
+if longEntry
+    longC := 1
+
+shortEntry = longC == 0 and shortC == 0 and not na(lastSwingLow) and ta.crossunder(close, lastSwingLow) and barstate.isconfirmed
+if shortEntry
+    shortC := 1
+
+// Plot position signals
+plotshape(longEntry, title="Long Entry", style=shape.arrowup, location=location.abovebar, color=color.green, text="Long")
+plotshape(longExit, title="Long Exit", style=shape.arrowdown, location=location.belowbar, color=color.red, text="Exit Long")
+plotshape(shortEntry, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.green, text="Short")
+plotshape(shortExit, title="Short Exit", style=shape.arrowup, location=location.belowbar, color=color.red, text="Exit Short")
+
+// Alerts
+alertcondition(longEntry, title="Long Entry", message="Long Entry triggered")
+alertcondition(longExit, title="Long Exit", message="Long Exit triggered")
+alertcondition(shortEntry, title="Short Entry", message="Short Entry triggered")
+alertcondition(shortExit, title="Short Exit", message="Short Exit triggered")
