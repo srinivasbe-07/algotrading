@@ -1,0 +1,181 @@
+//@version=6
+strategy("9-21 EMA Crossover crypto", overlay=true, default_qty_type=strategy.fixed, pyramiding=0)
+
+// Inputs
+emaFastLength = input.int(9, "Fast EMA Length")
+emaSlowLength = input.int(21, "Slow EMA Length")
+trailActive = input.bool(true, "Activate Trailing Stop")
+baseTrailMultiplier = input.float(0.4, "Base Trail Multiplier", minval=0.1, step=0.1)
+
+// Progressive Trail Settings
+enableDynamicTrail = input.bool(true, "Enable Progressive Trail")
+progressionBars = input.int(5, "Bars Between Progression", minval=1)
+maxMultiplier = input.float(0.75, "Max Trail Multiplier", minval=0.1, step=0.1)
+
+use_atr_distance = input.bool(title="Use ATR for Distance Filter", defval=true)
+distanceMultiplier = input.float(title="Distance Multiplier (ATR)", defval=0.5, step=0.1)
+minBarsBetweenCrosses = input.int(5, "Min Bars Between Crossovers", minval=1)
+// Reentry Inputs
+enableReentries = input.bool(true, "Enable Reentries")
+maxReentries = input.int(2, "Max Reentries", minval=0)
+
+var int crossBarIndex = 0
+// Trade Tracking
+var float entryPrice = na
+var float entryLow = na
+var float entryHigh = na
+var bool isLong = false
+var bool isShort = false
+var int reentryCount = 0
+var bool lastExitWasLong = false
+var bool lastExitWasShort = false
+// Trailing Stop Variables
+var float longTrailPrice = na
+var float shortTrailPrice = na
+var float longPeak = na
+var float shortValley = na
+var int entryBar = na
+
+// Define the ticker symbol
+symbol = syminfo.ticker
+
+// Set quantities based on the symbol
+quantity = switch symbol
+    'ETHUSD.P' => 20
+    'XRPUSD.P' => 120
+    'DOGEUSD.P' => 15
+    'BTCUSD.P' => 4
+    'SOLUSD.P' => 3
+
+// Calculate EMAs
+emaFast = ta.ema(close, emaFastLength)
+emaSlow = ta.ema(close, emaSlowLength)
+
+// Calculate ATR for entry distance filter
+atr = ta.atr(14)
+
+// Crossover Conditions
+bullishCross = ta.crossover(emaFast, emaSlow)
+bearishCross = ta.crossunder(emaFast, emaSlow)
+
+// Reentry Conditions
+highestHigh5 = ta.highest(high, 5)[1]
+lowestLow5 = ta.lowest(low, 5)[1]
+longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
+shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
+
+// Exit Conditions
+longStopPrice = trailActive ? (close < longTrailPrice) : (close < entryLow)
+shortStopPrice = trailActive ? (close > shortTrailPrice) : (close > entryHigh)
+
+// Function to get current progressive multiplier
+getCurrentMultiplier() =>
+    if not enableDynamicTrail
+        baseTrailMultiplier
+    else
+        barsSinceEntry = bar_index - entryBar
+        steps = math.floor(barsSinceEntry / progressionBars)
+        math.min(baseTrailMultiplier + (steps * 0.1), maxMultiplier)
+
+// Exit Orders
+if(isLong and (longStopPrice or bearishCross))
+    strategy.close("Long", comment = "close long")
+    isLong := false
+    entryPrice := na
+    entryLow := na
+    longPeak := na
+    longTrailPrice := na
+    entryBar := na
+    lastExitWasLong := true
+    lastExitWasShort := false
+
+if(isShort and (shortStopPrice or bullishCross))
+    strategy.close("Short", comment = "close Short")
+    isShort := false
+    entryPrice := na
+    entryHigh := na
+    shortValley := na
+    shortTrailPrice := na
+    entryBar := na
+    lastExitWasShort := true
+    lastExitWasLong := false
+
+// Calculate minDistance based on flag
+minDistance = use_atr_distance ? (atr * distanceMultiplier) : na
+// Calculate distance checks
+longDistanceOk = not use_atr_distance ? true : (math.abs(close - emaFast) > minDistance) and minBarsBetweenCrosses < bar_index - crossBarIndex
+
+// Strategy Logic - Original Entries Only
+if not isLong and not isShort and bullishCross and longDistanceOk
+    strategy.entry("Long", strategy.long, qty=quantity, comment="Long")
+    isLong := true
+    entryPrice := close
+    entryLow := low
+    longPeak := high
+    longTrailPrice := low
+    entryBar := bar_index
+    reentryCount := 0
+    lastExitWasLong := false
+    lastExitWasShort := false
+
+shortDistanceOk = not use_atr_distance ? (math.abs(close - emaSlow) > minDistance) and true : minBarsBetweenCrosses < bar_index - crossBarIndex
+
+if not isLong and not isShort and bearishCross and shortDistanceOk
+    strategy.entry("Short", strategy.short, qty=quantity, comment = "short")
+    isShort := true
+    entryPrice := close
+    entryHigh := high
+    shortValley := low
+    shortTrailPrice := high
+    entryBar := bar_index
+    reentryCount := 0
+    lastExitWasLong := false
+    lastExitWasShort := false
+
+
+// Strategy Logic - Reentries
+if longReentry
+    strategy.entry("Long", strategy.long, qty=quantity, comment = "reentry")
+    isLong := true
+    entryPrice := close
+    entryLow := low
+    longPeak := high
+    longTrailPrice := low
+    entryBar := bar_index
+    reentryCount := reentryCount + 1
+
+if shortReentry
+    strategy.entry("Short", strategy.short, qty=quantity, comment = "reentry")
+    isShort := true
+    entryPrice := close
+    entryHigh := high
+    shortValley := low
+    shortTrailPrice := high
+    entryBar := bar_index
+    reentryCount := reentryCount + 1
+
+// Update Trailing Levels with Progressive Multiplier
+if isLong and bar_index > entryBar
+    longPeak := math.max(longPeak, high)
+    currentMult = getCurrentMultiplier()
+    longTrailPrice := entryLow + (longPeak - entryLow) * currentMult
+    
+if isShort and bar_index > entryBar
+    shortValley := math.min(shortValley, low)
+    currentMult = getCurrentMultiplier()
+    shortTrailPrice := entryHigh - (entryHigh - shortValley) * currentMult
+
+if bullishCross or bearishCross
+    crossBarIndex := bar_index
+
+// Plotting
+plot(emaFast, color=color.new(color.blue, 0), title="9 EMA")
+plot(emaSlow, color=color.new(color.red, 0), title="21 EMA")
+
+// Visualize Trailing Stops
+plot(isLong and trailActive ? longTrailPrice : na, "Long Trail", color.new(color.green, 50), 2, plot.style_linebr)
+plot(isShort and trailActive ? shortTrailPrice : na, "Short Trail", color.new(color.red, 50), 2, plot.style_linebr)
+
+// Highlight Crossovers
+plotshape(bullishCross, style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small, title="Bullish Cross")
+plotshape(bearishCross, style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, title="Bearish Cross")
