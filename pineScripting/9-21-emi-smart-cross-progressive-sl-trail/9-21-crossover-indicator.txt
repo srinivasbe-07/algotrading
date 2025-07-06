@@ -14,7 +14,7 @@ maxMultiplier = input.float(0.75, "Max Trail Multiplier", minval=0.1, step=0.1)
 
 use_atr_distance = input.bool(title="Use ATR for Distance Filter", defval=true)
 distanceMultiplier = input.float(title="Distance Multiplier (ATR)", defval=0.5, step=0.1)
-minBarsBetweenCrosses = input.int(50, "Min Bars Between Crossovers", minval=1)
+minBarsBetweenCrosses = input.int(5, "Min Bars Between Crossovers", minval=1)
 // Reentry Inputs
 enableReentries = input.bool(true, "Enable Reentries")
 maxReentries = input.int(2, "Max Reentries", minval=0)
