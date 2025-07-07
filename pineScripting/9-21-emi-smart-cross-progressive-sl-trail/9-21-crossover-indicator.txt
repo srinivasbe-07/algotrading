@@ -1,6 +1,5 @@
 //@version=6
 indicator("9-21-crossover-india","9-21-india", overlay = true)
-
 // Inputs
 emaFastLength = input.int(9, "Fast EMA Length")
 emaSlowLength = input.int(21, "Slow EMA Length")
@@ -10,7 +9,7 @@ baseTrailMultiplier = input.float(0.4, "Base Trail Multiplier", minval=0.1, step
 // Progressive Trail Settings
 enableDynamicTrail = input.bool(true, "Enable Progressive Trail")
 progressionBars = input.int(5, "Bars Between Progression", minval=1)
-maxMultiplier = input.float(0.75, "Max Trail Multiplier", minval=0.1, step=0.1)
+maxMultiplier = input.float(0.3, "Max Trail Multiplier", minval=0.1, step=0.1)
 
 use_atr_distance = input.bool(title="Use ATR for Distance Filter", defval=true)
 distanceMultiplier = input.float(title="Distance Multiplier (ATR)", defval=0.5, step=0.1)
@@ -18,7 +17,6 @@ minBarsBetweenCrosses = input.int(5, "Min Bars Between Crossovers", minval=1)
 // Reentry Inputs
 enableReentries = input.bool(true, "Enable Reentries")
 maxReentries = input.int(2, "Max Reentries", minval=0)
-
 var int crossBarIndex = 0
 // Trade Tracking
 var float entryPrice = na
@@ -61,8 +59,6 @@ bearishCross = ta.crossunder(emaFast, emaSlow)
 // Reentry Conditions
 highestHigh5 = ta.highest(high, 5)[1]
 lowestLow5 = ta.lowest(low, 5)[1]
-longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
-shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
 
 // Exit Conditions
 longStopPrice = trailActive ? (close < longTrailPrice) : (close < entryLow)
@@ -117,7 +113,7 @@ if enterLong
     lastExitWasLong := false
     lastExitWasShort := false
 
-shortDistanceOk = not use_atr_distance ? (math.abs(close - emaSlow) > minDistance) and true : minBarsBetweenCrosses < bar_index - crossBarIndex
+shortDistanceOk = not use_atr_distance ? true : (math.abs(close - emaSlow) > minDistance) and  minBarsBetweenCrosses < bar_index - crossBarIndex
 enterShort = not isLong and not isShort and bearishCross and shortDistanceOk and barstate.isconfirmed
 if enterShort
     isShort := true
@@ -132,6 +128,8 @@ if enterShort
 
 
 // Strategy Logic - Reentries
+longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
+
 if longReentry
     isLong := true
     entryPrice := close
@@ -140,7 +138,7 @@ if longReentry
     longTrailPrice := low
     entryBar := bar_index
     reentryCount := reentryCount + 1
-
+shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
 if shortReentry
     isShort := true
     entryPrice := close
@@ -162,10 +160,16 @@ if isShort and bar_index > entryBar
     shortTrailPrice := entryHigh - (entryHigh - shortValley) * currentMult
 
 if bullishCross or bearishCross
-    label.new(bar_index, high, "Bar: " + str.tostring(bar_index - crossBarIndex))
+    //label.new(bar_index, high, "Bar: " + str.tostring(bar_index - crossBarIndex))
     crossBarIndex := bar_index
+    shortReentry := false
+    longReentry := false
 
+if bullishCross and not isLong
+    longReentry := true
 
+if bearishCross and not isShort
+    shortReentry := true
 // Plotting
 plot(emaFast, color=color.new(color.blue, 0), title="9 EMA")
 plot(emaSlow, color=color.new(color.red, 0), title="21 EMA")
@@ -173,10 +177,6 @@ plot(emaSlow, color=color.new(color.red, 0), title="21 EMA")
 // Visualize Trailing Stops
 plot(isLong and trailActive ? longTrailPrice : na, "Long Trail", color.new(color.green, 50), 2, plot.style_linebr)
 plot(isShort and trailActive ? shortTrailPrice : na, "Short Trail", color.new(color.red, 50), 2, plot.style_linebr)
-
-// Highlight Crossovers
-plotshape(bullishCross, style=shape.xcross, location=location.belowbar, color=color.new(color.green, 0), size=size.tiny, title="Bullish Cross")
-plotshape(bearishCross, style=shape.xcross, location=location.abovebar, color=color.new(color.red, 0), size=size.tiny, title="Bearish Cross")
 
 
 // Plot position signals

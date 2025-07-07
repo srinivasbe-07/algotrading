@@ -10,7 +10,7 @@ baseTrailMultiplier = input.float(0.4, "Base Trail Multiplier", minval=0.1, step
 // Progressive Trail Settings
 enableDynamicTrail = input.bool(true, "Enable Progressive Trail")
 progressionBars = input.int(5, "Bars Between Progression", minval=1)
-maxMultiplier = input.float(0.75, "Max Trail Multiplier", minval=0.1, step=0.1)
+maxMultiplier = input.float(0.3, "Max Trail Multiplier", minval=0.1, step=0.1)
 
 use_atr_distance = input.bool(title="Use ATR for Distance Filter", defval=true)
 distanceMultiplier = input.float(title="Distance Multiplier (ATR)", defval=0.5, step=0.1)
@@ -61,8 +61,6 @@ bearishCross = ta.crossunder(emaFast, emaSlow)
 // Reentry Conditions
 highestHigh5 = ta.highest(high, 5)[1]
 lowestLow5 = ta.lowest(low, 5)[1]
-longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
-shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
 
 // Exit Conditions
 longStopPrice = trailActive ? (close < longTrailPrice) : (close < entryLow)
@@ -118,7 +116,7 @@ if not isLong and not isShort and bullishCross and longDistanceOk
     lastExitWasLong := false
     lastExitWasShort := false
 
-shortDistanceOk = not use_atr_distance ? (math.abs(close - emaSlow) > minDistance) and true : minBarsBetweenCrosses < bar_index - crossBarIndex
+shortDistanceOk = not use_atr_distance ? true : (math.abs(close - emaSlow) > minDistance) and minBarsBetweenCrosses < bar_index - crossBarIndex
 
 if not isLong and not isShort and bearishCross and shortDistanceOk
     strategy.entry("Short", strategy.short, qty=quantity, comment = "short")
@@ -132,8 +130,8 @@ if not isLong and not isShort and bearishCross and shortDistanceOk
     lastExitWasLong := false
     lastExitWasShort := false
 
-
 // Strategy Logic - Reentries
+longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
 if longReentry
     strategy.entry("Long", strategy.long, qty=quantity, comment = "reentry")
     isLong := true
@@ -143,7 +141,7 @@ if longReentry
     longTrailPrice := low
     entryBar := bar_index
     reentryCount := reentryCount + 1
-
+shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
 if shortReentry
     strategy.entry("Short", strategy.short, qty=quantity, comment = "reentry")
     isShort := true
@@ -167,7 +165,13 @@ if isShort and bar_index > entryBar
 
 if bullishCross or bearishCross
     crossBarIndex := bar_index
+    longReentry:= false
+    shortReentry:= false
 
+if bullishCross and not isLong
+    longReentry := true
+if bearishCross and not isShort
+    shortReentry := true
 // Plotting
 plot(emaFast, color=color.new(color.blue, 0), title="9 EMA")
 plot(emaSlow, color=color.new(color.red, 0), title="21 EMA")
@@ -177,5 +181,5 @@ plot(isLong and trailActive ? longTrailPrice : na, "Long Trail", color.new(color
 plot(isShort and trailActive ? shortTrailPrice : na, "Short Trail", color.new(color.red, 50), 2, plot.style_linebr)
 
 // Highlight Crossovers
-plotshape(bullishCross, style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small, title="Bullish Cross")
-plotshape(bearishCross, style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small, title="Bearish Cross")
+plotshape(bullishCross, style=shape.xcross, location=location.belowbar, color=color.new(color.green, 0), size=size.tiny, title="Bullish Cross")
+plotshape(bearishCross, style=shape.xcross, location=location.abovebar, color=color.new(color.red, 0), size=size.tiny, title="Bearish Cross")
