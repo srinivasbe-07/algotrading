@@ -47,6 +47,9 @@ quantity = switch symbol
     'BTCUSD.P' => 4
     'SOLUSD.P' => 3
 
+if symbol == 'BTCUSD.P'
+    maxReentries := 3
+    minBarsBetweenCrosses := 3
 // Calculate EMAs
 emaFast = ta.ema(close, emaFastLength)
 emaSlow = ta.ema(close, emaSlowLength)
@@ -165,13 +168,13 @@ if isShort and bar_index > entryBar
 
 if bullishCross or bearishCross
     crossBarIndex := bar_index
-    longReentry:= false
-    shortReentry:= false
+    lastExitWasShort:= false
+    lastExitWasLong:= false
 
 if bullishCross and not isLong
-    longReentry := true
+    lastExitWasLong := true
 if bearishCross and not isShort
-    shortReentry := true
+    lastExitWasShort := true
 // Plotting
 plot(emaFast, color=color.new(color.blue, 0), title="9 EMA")
 plot(emaSlow, color=color.new(color.red, 0), title="21 EMA")
