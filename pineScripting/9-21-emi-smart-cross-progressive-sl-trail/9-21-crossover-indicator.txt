@@ -74,7 +74,7 @@ getCurrentMultiplier() =>
         math.min(baseTrailMultiplier + (steps * 0.1), maxMultiplier)
 
 // Exit Orders
-exitLong = (isLong and (longStopPrice or bearishCross))
+exitLong = isLong and (longStopPrice or bearishCross) and barstate.isconfirmed
 if exitLong
     isLong := false
     entryPrice := na
@@ -84,7 +84,7 @@ if exitLong
     entryBar := na
     lastExitWasLong := true
     lastExitWasShort := false
-exitShort = (isShort and (shortStopPrice or bullishCross))
+exitShort = isShort and (shortStopPrice or bullishCross) and barstate.isconfirmed
 if exitShort
     isShort := false
     entryPrice := na
@@ -128,7 +128,7 @@ if enterShort
 
 
 // Strategy Logic - Reentries
-longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
+longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries and barstate.isconfirmed
 
 if longReentry
     isLong := true
@@ -138,7 +138,7 @@ if longReentry
     longTrailPrice := low
     entryBar := bar_index
     reentryCount := reentryCount + 1
-shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
+shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries and barstate.isconfirmed
 if shortReentry
     isShort := true
     entryPrice := close
@@ -160,16 +160,15 @@ if isShort and bar_index > entryBar
     shortTrailPrice := entryHigh - (entryHigh - shortValley) * currentMult
 
 if bullishCross or bearishCross
-    //label.new(bar_index, high, "Bar: " + str.tostring(bar_index - crossBarIndex))
     crossBarIndex := bar_index
-    shortReentry := false
-    longReentry := false
+    lastExitWasShort:= false
+    lastExitWasLong:= false
 
 if bullishCross and not isLong
-    longReentry := true
-
+    lastExitWasLong := true
 if bearishCross and not isShort
-    shortReentry := true
+    lastExitWasShort := true
+
 // Plotting
 plot(emaFast, color=color.new(color.blue, 0), title="9 EMA")
 plot(emaSlow, color=color.new(color.red, 0), title="21 EMA")
@@ -184,7 +183,7 @@ plotshape(enterLong, title="Long Entry", style=shape.arrowup, location=location.
 plotshape(longReentry, title="Long Entry", style=shape.arrowup, location=location.abovebar, color=color.green, text="Re-Long")
 plotshape(exitLong, title="Long Exit", style=shape.arrowdown, location=location.belowbar, color=color.red, text="Exit Long")
 plotshape(enterShort, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.green, text="Short")
-plotshape(shortReentry, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.green, text="Re-Short")
+plotshape(shortReentry, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.red, text="Re-Short")
 
 plotshape(exitShort, title="Short Exit", style=shape.arrowup, location=location.belowbar, color=color.red, text="Exit Short")
 
