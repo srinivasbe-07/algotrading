@@ -80,7 +80,8 @@ getCurrentMultiplier() =>
 
 // Exit Orders
 if(isLong and (longStopPrice or bearishCross))
-    strategy.close("Long", comment = "close long")
+    if(strategy.position_size > 0)
+        strategy.close("Long", comment = "close long")
     isLong := false
     entryPrice := na
     entryLow := na
@@ -91,7 +92,8 @@ if(isLong and (longStopPrice or bearishCross))
     lastExitWasShort := false
 
 if(isShort and (shortStopPrice or bullishCross))
-    strategy.close("Short", comment = "close Short")
+    if(strategy.position_size < 0)
+        strategy.close("Short", comment = "close Short")
     isShort := false
     entryPrice := na
     entryHigh := na
@@ -108,7 +110,8 @@ longDistanceOk = not use_atr_distance ? true : (math.abs(close - emaFast) > minD
 
 // Strategy Logic - Original Entries Only
 if not isLong and not isShort and bullishCross and longDistanceOk
-    strategy.entry("Long", strategy.long, qty=quantity, comment="Long")
+    if(strategy.position_size <= 0)
+        strategy.entry("Long", strategy.long, qty=quantity, comment="Long")
     isLong := true
     entryPrice := close
     entryLow := low
@@ -122,7 +125,8 @@ if not isLong and not isShort and bullishCross and longDistanceOk
 shortDistanceOk = not use_atr_distance ? true : (math.abs(close - emaSlow) > minDistance) and minBarsBetweenCrosses < bar_index - crossBarIndex
 
 if not isLong and not isShort and bearishCross and shortDistanceOk
-    strategy.entry("Short", strategy.short, qty=quantity, comment = "short")
+    if(strategy.position_size >= 0)
+        strategy.entry("Short", strategy.short, qty=quantity, comment = "short")
     isShort := true
     entryPrice := close
     entryHigh := high
@@ -136,7 +140,8 @@ if not isLong and not isShort and bearishCross and shortDistanceOk
 // Strategy Logic - Reentries
 longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
 if longReentry
-    strategy.entry("Long", strategy.long, qty=quantity, comment = "reentry")
+    if(strategy.position_size <= 0)
+        strategy.entry("Long", strategy.long, qty=quantity, comment = "reentry")
     isLong := true
     entryPrice := close
     entryLow := low
@@ -146,7 +151,8 @@ if longReentry
     reentryCount := reentryCount + 1
 shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
 if shortReentry
-    strategy.entry("Short", strategy.short, qty=quantity, comment = "reentry")
+    if(strategy.position_size >= 0)
+        strategy.entry("Short", strategy.short, qty=quantity, comment = "reentry")
     isShort := true
     entryPrice := close
     entryHigh := high
