@@ -1,5 +1,6 @@
 //@version=6
-strategy("9-21 EMA Crossover-pivot-trail", overlay=true, default_qty_type=strategy.fixed, pyramiding=0)
+indicator("9-21 EMA Crossover-pivot-trail-india","9-21-pivot-india", overlay = true)
+
 
 // Inputs
 emaFastLength = input.int(9, "Fast EMA Length")
@@ -13,10 +14,12 @@ pivotBarsLeft = input.int(5, "Pivot Left Bars", minval=1)
 pivotBarsRight = input.int(5, "Pivot Right Bars", minval=1)
 
 // Trade Tracking
-var int crossBarIndex = 0
-var float entryPrice = na
+
 var bool isLong = false
 var bool isShort = false
+
+var int crossBarIndex = 0
+var float entryPrice = na
 var int reentryCount = 0
 var bool lastExitWasLong = false
 var bool lastExitWasShort = false
@@ -24,26 +27,7 @@ var int entryBar = na
 var float longStopPrice = na
 var float shortStopPrice = na
 
-// Position Check Functions
-noPosition() => strategy.position_size == 0
-isPositionLong() => strategy.position_size > 0
-isPositionShort() => strategy.position_size < 0
 
-// Define the ticker symbol
-symbol = syminfo.ticker
-
-// Set quantities based on the symbol
-quantity = switch symbol
-    'ETHUSD.P' => 20
-    'XRPUSD.P' => 120
-    'DOGEUSD.P' => 15
-    'BTCUSD.P' => 4
-    'SOLUSD.P' => 3
-
-if symbol == 'BTCUSD.P'
-    maxReentries := 3
-    minBarsBetweenCrosses := 3
-    
 // Calculate EMAs
 emaFast = ta.ema(close, emaFastLength)
 emaSlow = ta.ema(close, emaSlowLength)
@@ -72,21 +56,17 @@ if not na(pivotHigh) and isShort
     shortStopPrice := high[pivotBarsRight]
 
 // Exit Conditions
-longExitCondition = (low <= longStopPrice) or bearishCross
-shortExitCondition = (high >= shortStopPrice) or bullishCross
+exitLong = isLong and (low <= longStopPrice or bearishCross) and barstate.isconfirmed
 
-// Exit Orders - close any existing position first
-if isPositionLong() and longExitCondition
-    strategy.close("Long", comment = "Exit Long")
+if exitLong
     isLong := false
     entryPrice := na
     entryBar := na
     lastExitWasLong := true
     lastExitWasShort := false
     longStopPrice := na
-
-if isPositionShort() and shortExitCondition
-    strategy.close("Short", comment = "Exit Short")
+exitShort = isShort and (high >= shortStopPrice) or bullishCross and barstate.isconfirmed
+if exitShort
     isShort := false
     entryPrice := na
     entryBar := na
@@ -98,9 +78,10 @@ if isPositionShort() and shortExitCondition
 longDistanceOk = not use_atr_distance ? true : (math.abs(close - emaFast) > minDistance) and minBarsBetweenCrosses < bar_index - crossBarIndex
 shortDistanceOk = not use_atr_distance ? true : (math.abs(close - emaSlow) > minDistance) and minBarsBetweenCrosses < bar_index - crossBarIndex
 
-// Strategy Entry - only enter if no position exists
-if noPosition() and bullishCross and longDistanceOk
-    strategy.entry("Long", strategy.long, qty=quantity, comment="Long")
+// Long Entry Condition
+enterLong = not isLong and not isShort and bullishCross and longDistanceOk and  barstate.isconfirmed
+
+if enterLong
     isLong := true
     entryPrice := close
     entryBar := bar_index
@@ -109,8 +90,9 @@ if noPosition() and bullishCross and longDistanceOk
     lastExitWasShort := false
     longStopPrice := pivotLow
 
-if noPosition() and bearishCross and shortDistanceOk
-    strategy.entry("Short", strategy.short, qty=quantity, comment="Short")
+enterShort = not isLong and not isShort and bearishCross and shortDistanceOk and barstate.isconfirmed
+
+if enterShort
     isShort := true
     entryPrice := close
     entryBar := bar_index
@@ -120,9 +102,8 @@ if noPosition() and bearishCross and shortDistanceOk
     shortStopPrice := pivotHigh
 
 // Strategy Logic - Reentries
-longReentry = enableReentries and noPosition() and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
+longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries and barstate.isconfirmed
 if longReentry
-    strategy.entry("Long", strategy.long, qty=quantity, comment="Reentry Long")
     isLong := true
     entryPrice := close
     entryBar := bar_index
@@ -131,9 +112,9 @@ if longReentry
     lastExitWasShort := false
     longStopPrice := pivotLow
 
-shortReentry = enableReentries and noPosition() and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
+shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries and barstate.isconfirmed
 if shortReentry
-    strategy.entry("Short", strategy.short, qty=quantity, comment="Reentry Short")
+    recentPivot = high[pivotBarsRight]
     isShort := true
     entryPrice := close
     entryBar := bar_index
@@ -164,3 +145,18 @@ plotshape(bearishCross, style=shape.xcross, location=location.abovebar, color=co
 
 plot(isLong  ? longStopPrice : na, "Long Trail", color.new(color.green, 50), 2, plot.style_linebr)
 plot(isShort  ? shortStopPrice : na, "Short Trail", color.new(color.red, 50), 2, plot.style_linebr)
+
+// Plot position signals
+plotshape(enterLong, title="Long Entry", style=shape.arrowup, location=location.abovebar, color=color.green, text="Long")
+plotshape(longReentry, title="Long Entry", style=shape.arrowup, location=location.abovebar, color=color.green, text="Re-Long")
+plotshape(exitLong, title="Long Exit", style=shape.arrowdown, location=location.belowbar, color=color.red, text="Exit Long")
+plotshape(enterShort, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.green, text="Short")
+plotshape(shortReentry, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.red, text="Re-Short")
+
+plotshape(exitShort, title="Short Exit", style=shape.arrowup, location=location.belowbar, color=color.red, text="Exit Short")
+
+// ===== ALERTS ===== //
+alertcondition(enterLong or longReentry,  "Long Entry Alert",  "9-21-cross: BUY")
+alertcondition(enterShort or shortReentry, "Short Entry Alert", "9-21-cross: SELL")
+alertcondition(exitLong,   "Long Exit Alert",   "9-21-cross: CLOSE LONG")
+alertcondition(exitShort,  "Short Exit Alert",  "9-21-cross: CLOSE SHORT")
