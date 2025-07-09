@@ -1,5 +1,5 @@
 //@version=6
-strategy("9-21 EMA Crossover-pivot-trail", overlay=true, default_qty_type=strategy.fixed, pyramiding=0)
+indicator("9-21 EMA Crossover -india (Pivot Trail Stops)","921PivInd", overlay = true)
 
 // Inputs
 emaFastLength = input.int(9, "Fast EMA Length")
@@ -9,158 +9,105 @@ distanceMultiplier = input.float(title="Distance Multiplier (ATR)", defval=0.5, 
 minBarsBetweenCrosses = input.int(5, "Min Bars Between Crossovers", minval=1)
 enableReentries = input.bool(true, "Enable Reentries")
 maxReentries = input.int(2, "Max Reentries", minval=0)
-pivotBarsLeft = input.int(5, "Pivot Left Bars", minval=1)
-pivotBarsRight = input.int(5, "Pivot Right Bars", minval=1)
+pivotBarsLeft = input.int(2, "Pivot Left Bars", minval=1)
+pivotBarsRight = input.int(2, "Pivot Right Bars", minval=1)
 
-// Trade Tracking
 var int crossBarIndex = 0
-var float entryPrice = na
+var float longStoploss = na
+var float shortStoploss = na
 var bool isLong = false
 var bool isShort = false
-var int reentryCount = 0
-var bool lastExitWasLong = false
 var bool lastExitWasShort = false
-var int entryBar = na
-var float longStopPrice = na
-var float shortStopPrice = na
+var int  reentryCount = 0
 
-// Position Check Functions
-noPosition() => strategy.position_size == 0
-isPositionLong() => strategy.position_size > 0
-isPositionShort() => strategy.position_size < 0
-
-// Define the ticker symbol
-symbol = syminfo.ticker
-
-// Set quantities based on the symbol
-quantity = switch symbol
-    'ETHUSD.P' => 20
-    'XRPUSD.P' => 120
-    'DOGEUSD.P' => 15
-    'BTCUSD.P' => 4
-    'SOLUSD.P' => 3
-
-if symbol == 'BTCUSD.P'
-    maxReentries := 3
-    minBarsBetweenCrosses := 3
-    
 // Calculate EMAs
 emaFast = ta.ema(close, emaFastLength)
 emaSlow = ta.ema(close, emaSlowLength)
+
+// calculate Pivot 
+pivotHigh  = ta.pivothigh(pivotBarsLeft, pivotBarsRight)
+pivotLow = ta.pivotlow(pivotBarsLeft, pivotBarsRight)
+if(not na(pivotHigh))
+    shortStoploss := pivotHigh
+if(not na(pivotLow))
+    longStoploss := pivotLow
+// Calculate ATR for entry distance 0
+atr = ta.atr(14)
 
 // Crossover Conditions
 bullishCross = ta.crossover(emaFast, emaSlow)
 bearishCross = ta.crossunder(emaFast, emaSlow)
 
-// Reentry Conditions
-highestHigh5 = ta.highest(high, 5)[1]
-lowestLow5 = ta.lowest(low, 5)[1]
-
-// ATR for distance filter
-atr = ta.atr(14)
-minDistance = use_atr_distance ? (atr * distanceMultiplier) : na
-
-// Pivot Detection
-pivotLow = ta.pivotlow(low, pivotBarsLeft, pivotBarsRight)
-pivotHigh = ta.pivothigh(high, pivotBarsLeft, pivotBarsRight)
-
-// Update stops when new pivots are detected
-if not na(pivotLow) and isLong
-    longStopPrice := low[pivotBarsRight]
-
-if not na(pivotHigh) and isShort
-    shortStopPrice := high[pivotBarsRight]
-
-// Exit Conditions
-longExitCondition = (low <= longStopPrice) or bearishCross
-shortExitCondition = (high >= shortStopPrice) or bullishCross
-
-// Exit Orders - close any existing position first
-if isPositionLong() and longExitCondition
-    strategy.close("Long", comment = "Exit Long")
+//Long Exit Condition
+longExit  = isLong and bearishCross and barstate.isconfirmed 
+if(longExit)
     isLong := false
-    entryPrice := na
-    entryBar := na
-    lastExitWasLong := true
     lastExitWasShort := false
-    longStopPrice := na
+    reentryCount := 0
 
-if isPositionShort() and shortExitCondition
-    strategy.close("Short", comment = "Exit Short")
+pivotCrossOver = ta.crossover(close, shortStoploss)
+//Short Exit Condition 
+shortExit = isShort and  (bullishCross or pivotCrossOver)  and barstate.isconfirmed
+if(shortExit)
     isShort := false
-    entryPrice := na
-    entryBar := na
     lastExitWasShort := true
-    lastExitWasLong := false
-    shortStopPrice := na
+    reentryCount := 0
 
-// Entry Conditions with ATR Distance Filter
+// Calculate minDistance based on flag
+minDistance = use_atr_distance ? (atr * distanceMultiplier) : na
+// Calculate distance checks
 longDistanceOk = not use_atr_distance ? true : (math.abs(close - emaFast) > minDistance) and minBarsBetweenCrosses < bar_index - crossBarIndex
 shortDistanceOk = not use_atr_distance ? true : (math.abs(close - emaSlow) > minDistance) and minBarsBetweenCrosses < bar_index - crossBarIndex
-
-// Strategy Entry - only enter if no position exists
-if noPosition() and bullishCross and longDistanceOk
-    strategy.entry("Long", strategy.long, qty=quantity, comment="Long")
+//Long Entry Condition
+longCondition = not isLong and not isShort and  bullishCross  and barstate.isconfirmed
+if(longCondition)
     isLong := true
-    entryPrice := close
-    entryBar := bar_index
-    reentryCount := 0
-    lastExitWasLong := false
     lastExitWasShort := false
-    longStopPrice := pivotLow
-
-if noPosition() and bearishCross and shortDistanceOk
-    strategy.entry("Short", strategy.short, qty=quantity, comment="Short")
+    reentryCount := 0
+//Short Entry Condition
+shortCondition = not isLong and not isShort  and  bearishCross  and shortDistanceOk and  barstate.isconfirmed
+if(shortCondition)
     isShort := true
-    entryPrice := close
-    entryBar := bar_index
     reentryCount := 0
-    lastExitWasLong := false
-    lastExitWasShort := false
-    shortStopPrice := pivotHigh
 
-// Strategy Logic - Reentries
-longReentry = enableReentries and noPosition() and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries
-if longReentry
-    strategy.entry("Long", strategy.long, qty=quantity, comment="Reentry Long")
-    isLong := true
-    entryPrice := close
-    entryBar := bar_index
-    reentryCount := reentryCount + 1
-    lastExitWasLong := false
-    lastExitWasShort := false
-    longStopPrice := pivotLow
 
-shortReentry = enableReentries and noPosition() and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
+// short Reentry
+lowestLow5 =  ta.lowest(low, 5)[1]
+shortReentry = enableReentries and not isLong and not isShort and 
+             lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries
 if shortReentry
-    strategy.entry("Short", strategy.short, qty=quantity, comment="Reentry Short")
     isShort := true
-    entryPrice := close
-    entryBar := bar_index
-    reentryCount := reentryCount + 1
-    lastExitWasLong := false
-    lastExitWasShort := false
-    shortStopPrice := pivotHigh
+    reentryCount :=reentryCount + 1
+
 
 if bullishCross or bearishCross
     crossBarIndex := bar_index
     lastExitWasShort := false
-    lastExitWasLong := false
 
-if bullishCross and not isLong
-    lastExitWasLong := true
 if bearishCross and not isShort
     lastExitWasShort := true
-    
 // Plotting
 plot(emaFast, color=color.new(color.blue, 0), title="9 EMA")
-plot(emaSlow, color=color.new(color.red, 0), title="21 EMA")
+plot(emaSlow, color=color.new(color.black, 0), title="21 EMA")
+
 
 // Highlight Crossovers
 plotshape(bullishCross, style=shape.xcross, location=location.belowbar, color=color.new(color.green, 0), size=size.tiny, title="Bullish Cross")
 plotshape(bearishCross, style=shape.xcross, location=location.abovebar, color=color.new(color.red, 0), size=size.tiny, title="Bearish Cross")
 
-// Plot pivot stops
+plot(isShort ? shortStoploss : na, "Short Trail", color.new(color.red, 50), 2, plot.style_linebr)
 
-plot(isLong  ? longStopPrice : na, "Long Trail", color.new(color.green, 50), 2, plot.style_linebr)
-plot(isShort  ? shortStopPrice : na, "Short Trail", color.new(color.red, 50), 2, plot.style_linebr)
+
+// Plot position signals
+plotshape(longCondition, title="Long Entry", style=shape.arrowup, location=location.abovebar, color=color.green, text="Long")
+plotshape(longExit, title="Long Exit", style=shape.arrowdown, location=location.belowbar, color=color.red, text="Exit Long")
+plotshape(shortCondition, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.green, text="Short")
+plotshape(shortReentry, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.green, text="Re-Short")
+
+plotshape(shortExit, title="Short Exit", style=shape.arrowup, location=location.belowbar, color=color.red, text="Exit Short")
+
+// ===== ALERTS ===== //
+alertcondition(longCondition,  "Long Entry Alert",  "9-21-cross: BUY")
+alertcondition(shortCondition or shortReentry, "Short Entry Alert", "9-21-cross: SELL")
+alertcondition(longExit,   "Long Exit Alert",   "9-21-cross: CLOSE LONG")
+alertcondition(shortExit,  "Short Exit Alert",  "9-21-cross: CLOSE SHORT")

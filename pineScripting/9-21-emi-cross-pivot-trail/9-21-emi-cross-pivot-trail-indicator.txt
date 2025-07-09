@@ -48,12 +48,9 @@ minDistance = use_atr_distance ? (atr * distanceMultiplier) : na
 pivotLow = ta.pivotlow(low, pivotBarsLeft, pivotBarsRight)
 pivotHigh = ta.pivothigh(high, pivotBarsLeft, pivotBarsRight)
 
-// Update stops when new pivots are detected
-if not na(pivotLow) and isLong
-    longStopPrice := low[pivotBarsRight]
+longStopPrice := ta.lowest(low, pivotBarsLeft)[1]
 
-if not na(pivotHigh) and isShort
-    shortStopPrice := high[pivotBarsRight]
+shortStopPrice := ta.highest(high, pivotBarsLeft)[1]
 
 // Exit Conditions
 exitLong = isLong and (low <= longStopPrice or bearishCross) and barstate.isconfirmed
@@ -88,7 +85,7 @@ if enterLong
     reentryCount := 0
     lastExitWasLong := false
     lastExitWasShort := false
-    longStopPrice := pivotLow
+    longStopPrice := na(pivotLow) ? longStopPrice : pivotLow
 
 enterShort = not isLong and not isShort and bearishCross and shortDistanceOk and barstate.isconfirmed
 
@@ -99,7 +96,7 @@ if enterShort
     reentryCount := 0
     lastExitWasLong := false
     lastExitWasShort := false
-    shortStopPrice := pivotHigh
+    shortStopPrice := na(pivotHigh) ? shortStopPrice : pivotHigh
 
 // Strategy Logic - Reentries
 longReentry = enableReentries and not isLong and not isShort and lastExitWasLong and close > highestHigh5 and reentryCount < maxReentries and barstate.isconfirmed
@@ -110,7 +107,7 @@ if longReentry
     reentryCount := reentryCount + 1
     lastExitWasLong := false
     lastExitWasShort := false
-    longStopPrice := pivotLow
+    longStopPrice := na(pivotLow) ? longStopPrice : pivotLow
 
 shortReentry = enableReentries and not isLong and not isShort and lastExitWasShort and close < lowestLow5 and reentryCount < maxReentries and barstate.isconfirmed
 if shortReentry
@@ -121,7 +118,7 @@ if shortReentry
     reentryCount := reentryCount + 1
     lastExitWasLong := false
     lastExitWasShort := false
-    shortStopPrice := pivotHigh
+    shortStopPrice := na(pivotHigh) ? shortStopPrice : pivotHigh
 
 if bullishCross or bearishCross
     crossBarIndex := bar_index
