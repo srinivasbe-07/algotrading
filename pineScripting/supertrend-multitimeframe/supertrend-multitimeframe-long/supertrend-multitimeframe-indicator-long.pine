@@ -34,9 +34,12 @@ if ta.change(time("D")) != 0
     longC      := 0
     entryPrice := na
 
+crossL    = ta.crossover(close, l_supertrend)
+crossH    = ta.crossover(close, h_supertrend)
+
 slHit     = longC != 0 and not na(entryPrice) and low <= entryPrice - slPoints
 longExit  = longC != 0 and (close < l_supertrend or close < h_supertrend) and barstate.isconfirmed
-longEntry = longC == 0 and ((ta.crossover(close, l_supertrend) and close > h_supertrend) or (ta.crossover(close, h_supertrend) and close > l_supertrend)) and barstate.isconfirmed
+longEntry = longC == 0 and ((crossL and close > h_supertrend) or (crossH and close > l_supertrend)) and barstate.isconfirmed
 
 if longExit or slHit
     longC      := 0
