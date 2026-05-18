@@ -1,0 +1,79 @@
+//@version=6
+strategy("Super Trend Multi Time Frame Long", overlay=true, default_qty_type=strategy.fixed,
+         pyramiding=0)
+
+atrPeriod       = input.int(10,    "ATR Length",         minval = 1)
+factor          = input.float(3.0, "Factor",             minval = 0.01, step = 0.01)
+higherTimeFrame = input.timeframe("3",  "Higher Timeframe")
+lowerTimeFrame  = input.timeframe("1",  "Lower Timeframe")
+slPoints        = input.float(15.0, "Stop Loss Points",  minval = 0.5, step = 0.5)
+trailStep       = input.float(10.0, "Trail Step Points", minval = 0.5, step = 0.5)
+
+[l_supertrend, l_direction] = request.security(syminfo.tickerid, lowerTimeFrame, ta.supertrend(factor, atrPeriod))
+l_supertrend := barstate.isfirst ? na : l_supertrend
+l_upTrend =    plot(l_direction < 0 ? l_supertrend : na, "Up Trend",   color = color.green, style = plot.style_linebr)
+l_downTrend =  plot(l_direction < 0 ? na : l_supertrend, "Down Trend", color = color.red,   style = plot.style_linebr)
+l_bodyMiddle = plot(barstate.isfirst ? na : (open + close) / 2, "Body Middle", display = display.none)
+
+fill(l_bodyMiddle, l_upTrend,   title = "Uptrend background",   color = color.new(color.green, 90), fillgaps = false)
+fill(l_bodyMiddle, l_downTrend, title = "Downtrend background", color = color.new(color.red,   90), fillgaps = false)
+
+[h_supertrend, h_direction] = request.security(syminfo.tickerid, higherTimeFrame, ta.supertrend(factor, atrPeriod))
+h_supertrend := barstate.isfirst ? na : h_supertrend
+h_upTrend =    plot(h_direction < 0 ? h_supertrend : na, "Up Trend",   color = color.green, style = plot.style_linebr)
+h_downTrend =  plot(h_direction < 0 ? na : h_supertrend, "Down Trend", color = color.red,   style = plot.style_linebr)
+h_bodyMiddle = plot(barstate.isfirst ? na : (open + close) / 2, "Body Middle", display = display.none)
+
+fill(h_bodyMiddle, h_upTrend,   title = "Uptrend background",   color = color.new(color.green, 90), fillgaps = false)
+fill(h_bodyMiddle, h_downTrend, title = "Downtrend background", color = color.new(color.red,   90), fillgaps = false)
+
+// Define the ticker symbol
+symbol = syminfo.ticker
+
+// Set quantities based on the symbol
+quantity = switch symbol
+    'BTCUSD.P'  => 7
+    'SOLUSD.P'  => 5
+    'ETHUSD.P'  => 27
+    'NIFTY'     => 1
+    'BANKNIFTY' => 1
+    'SENSEX'    => 1
+    => 0
+
+var int longC = 0
+
+longExit  = longC != 0 and (close < l_supertrend or close < h_supertrend) and barstate.isconfirmed
+
+if longExit
+    longC := 0
+    if symbol == 'NIFTY'
+        strategy.close("Long", comment='exit', alert_message='684b964eabc928d036545e4c')
+    else if symbol == 'SENSEX'
+        strategy.close("Long", comment='exit', alert_message='684be6b7abc928d03654601b')
+    else if symbol == 'BANKNIFTY'
+        strategy.close("Long", comment='exit', alert_message='684beb16290d47dc0a8733bb')
+    else
+        strategy.close("Long")
+
+// Long Entry
+longEntry = longC == 0 and ((ta.crossover(close, l_supertrend) and close > h_supertrend) or (ta.crossover(close, h_supertrend) and close > l_supertrend)) and barstate.isconfirmed
+
+if longEntry
+    longC := 1
+    if symbol == 'NIFTY'
+        strategy.entry("Long", strategy.long, qty = quantity, comment='entry', alert_message='684b964eabc928d036545e4c')
+    else if symbol == 'SENSEX'
+        strategy.entry("Long", strategy.long, qty = quantity, comment='entry', alert_message='684be6b7abc928d03654601b')
+    else if symbol == 'BANKNIFTY'
+        strategy.entry("Long", strategy.long, qty = quantity, comment='entry', alert_message='684beb16290d47dc0a8733bb')
+    else
+        strategy.entry("Long", strategy.long, qty = quantity)
+    strategy.exit("Long SL", "Long", stop = close - slPoints, trail_points = trailStep, trail_offset = trailStep)
+
+// Plot SL line
+longSL = strategy.position_size > 0 ? strategy.position_avg_price - slPoints : na
+plot(longSL, "Stop Loss", color = color.orange, style = plot.style_linebr, linewidth = 1)
+
+// Plot signals
+plotshape(longEntry, title="Long Entry", style=shape.arrowup,   location=location.abovebar, color=color.green, text="Long")
+plotshape(longExit,  title="Long Exit",  style=shape.arrowdown, location=location.belowbar, color=color.red,   text="Exit Long")
