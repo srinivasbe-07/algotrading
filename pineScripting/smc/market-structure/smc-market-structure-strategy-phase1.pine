@@ -1,0 +1,47 @@
+//@version=6
+strategy("SMC - Market Structure Strategy Phase 1", overlay=true,
+         default_qty_type=strategy.fixed, pyramiding=0)
+
+// ─── INPUTS ────────────────────────────────────────────────────────────────
+extLeft  = input.int(10, "External Left Bars",  minval=1, group="External Structure")
+extRight = input.int(10, "External Right Bars", minval=1, group="External Structure")
+
+intLeft  = input.int(3,  "Internal Left Bars",  minval=1, group="Internal Structure")
+intRight = input.int(3,  "Internal Right Bars", minval=1, group="Internal Structure")
+
+showExternal = input.bool(true, "Show External Swings", group="External Structure")
+showInternal = input.bool(true, "Show Internal Swings", group="Internal Structure")
+
+// ─── SWING DETECTION ───────────────────────────────────────────────────────
+extSwingHigh = ta.pivothigh(high, extLeft, extRight)
+extSwingLow  = ta.pivotlow(low,   extLeft, extRight)
+
+intSwingHigh = ta.pivothigh(high, intLeft, intRight)
+intSwingLow  = ta.pivotlow(low,   intLeft, intRight)
+
+// ─── PLOT EXTERNAL SWINGS (Blue, larger) ───────────────────────────────────
+plotshape(showExternal and not na(extSwingHigh),
+     title="Ext Swing High", style=shape.circle,
+     location=location.abovebar, color=color.blue,
+     size=size.small, offset=-extRight)
+
+plotshape(showExternal and not na(extSwingLow),
+     title="Ext Swing Low",  style=shape.circle,
+     location=location.belowbar, color=color.blue,
+     size=size.small, offset=-extRight)
+
+// ─── PLOT INTERNAL SWINGS (Gray, smaller) ──────────────────────────────────
+plotshape(showInternal and not na(intSwingHigh),
+     title="Int Swing High", style=shape.circle,
+     location=location.abovebar, color=color.gray,
+     size=size.tiny, offset=-intRight)
+
+plotshape(showInternal and not na(intSwingLow),
+     title="Int Swing Low",  style=shape.circle,
+     location=location.belowbar, color=color.gray,
+     size=size.tiny, offset=-intRight)
+
+// ─── STRATEGY ENTRIES (placeholder — built in later phases) ────────────────
+// Phase 2: structure lines + HH/HL/LH/LL labels
+// Phase 3: BOS and CHoCH detection
+// Phase 4: entry/exit logic based on structure
