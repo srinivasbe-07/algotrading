@@ -35,11 +35,11 @@ if not na(extSwingHigh)
             line.new(x1=extLastHighBar, y1=extLastHigh, x2=pivotBar, y2=pivotPrice,
                      color=isHH ? color.blue : color.red, width=2, style=line.style_solid)
             label.new(x=pivotBar, y=pivotPrice, text=isHH ? "HH" : "LH",
-                      style=label.style_none,
+                      yloc=yloc.abovebar, style=label.style_none,
                       textcolor=isHH ? color.blue : color.red, size=size.small)
         else
             label.new(x=pivotBar, y=pivotPrice, text="SH",
-                      style=label.style_none,
+                      yloc=yloc.abovebar, style=label.style_none,
                       textcolor=color.gray, size=size.small)
     extLastHigh    := pivotPrice
     extLastHighBar := pivotBar
@@ -53,11 +53,11 @@ if not na(extSwingLow)
             line.new(x1=extLastLowBar, y1=extLastLow, x2=pivotBar, y2=pivotPrice,
                      color=isHL ? color.blue : color.red, width=2, style=line.style_solid)
             label.new(x=pivotBar, y=pivotPrice, text=isHL ? "HL" : "LL",
-                      style=label.style_none,
+                      yloc=yloc.belowbar, style=label.style_none,
                       textcolor=isHL ? color.blue : color.red, size=size.small)
         else
             label.new(x=pivotBar, y=pivotPrice, text="SL",
-                      style=label.style_none,
+                      yloc=yloc.belowbar, style=label.style_none,
                       textcolor=color.gray, size=size.small)
     extLastLow    := pivotPrice
     extLastLowBar := pivotBar
@@ -78,11 +78,11 @@ if not na(intSwingHigh)
                      color=isHH ? color.new(color.blue, 50) : color.new(color.red, 50),
                      width=1, style=line.style_dashed)
             label.new(x=pivotBar, y=pivotPrice, text=isHH ? "hh" : "lh",
-                      style=label.style_none,
+                      yloc=yloc.abovebar, style=label.style_none,
                       textcolor=isHH ? color.blue : color.red, size=size.tiny)
         else
             label.new(x=pivotBar, y=pivotPrice, text="sh",
-                      style=label.style_none,
+                      yloc=yloc.abovebar, style=label.style_none,
                       textcolor=color.gray, size=size.tiny)
     intLastHigh    := pivotPrice
     intLastHighBar := pivotBar
@@ -97,11 +97,11 @@ if not na(intSwingLow)
                      color=isHL ? color.new(color.blue, 50) : color.new(color.red, 50),
                      width=1, style=line.style_dashed)
             label.new(x=pivotBar, y=pivotPrice, text=isHL ? "hl" : "ll",
-                      style=label.style_none,
+                      yloc=yloc.belowbar, style=label.style_none,
                       textcolor=isHL ? color.blue : color.red, size=size.tiny)
         else
             label.new(x=pivotBar, y=pivotPrice, text="sl",
-                      style=label.style_none,
+                      yloc=yloc.belowbar, style=label.style_none,
                       textcolor=color.gray, size=size.tiny)
     intLastLow    := pivotPrice
     intLastLowBar := pivotBar
@@ -141,9 +141,10 @@ if barstate.isconfirmed and not na(extBosHigh) and not extHighBroken and close >
     lineCol       = isCHoCH ? color.orange : color.green
     line.new(x1=extBosHighBar, y1=extBosHigh, x2=bar_index, y2=extBosHigh,
              color=lineCol, width=2, style=line.style_dotted)
-    label.new(x=bar_index, y=extBosHigh, text=isCHoCH ? "CHoCH" : "BOS",
-              style=label.style_none,
-              textcolor=lineCol, size=size.normal)
+    label.new(x=math.round((extBosHighBar + bar_index) / 2), y=extBosHigh,
+              text=isCHoCH ? "CHoCH" : "BOS",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.small)
     extBias := 1
     if showChochLine
         if not na(extChochLine)
@@ -158,9 +159,10 @@ if barstate.isconfirmed and not na(extBosLow) and not extLowBroken and close < e
     lineCol      = isCHoCH ? color.orange : color.red
     line.new(x1=extBosLowBar, y1=extBosLow, x2=bar_index, y2=extBosLow,
              color=lineCol, width=2, style=line.style_dotted)
-    label.new(x=bar_index, y=extBosLow, text=isCHoCH ? "CHoCH" : "BOS",
-              style=label.style_none,
-              textcolor=lineCol, size=size.normal)
+    label.new(x=math.round((extBosLowBar + bar_index) / 2), y=extBosLow,
+              text=isCHoCH ? "CHoCH" : "BOS",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.small)
     extBias := -1
     if showChochLine
         if not na(extChochLine)
@@ -203,9 +205,10 @@ if barstate.isconfirmed and not na(intBosHigh) and not intHighBroken and close >
     lineCol       = isCHoCH ? color.orange : color.green
     line.new(x1=intBosHighBar, y1=intBosHigh, x2=bar_index, y2=intBosHigh,
              color=lineCol, width=1, style=line.style_dotted)
-    label.new(x=bar_index, y=intBosHigh, text=isCHoCH ? "choch" : "bos",
-              style=label.style_none,
-              textcolor=lineCol, size=size.tiny)
+    label.new(x=math.round((intBosHighBar + bar_index) / 2), y=intBosHigh,
+              text=isCHoCH ? "choch" : "bos",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.tiny)
     intBias := 1
 
 if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < intBosLow
@@ -214,9 +217,10 @@ if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < i
     lineCol      = isCHoCH ? color.orange : color.red
     line.new(x1=intBosLowBar, y1=intBosLow, x2=bar_index, y2=intBosLow,
              color=lineCol, width=1, style=line.style_dotted)
-    label.new(x=bar_index, y=intBosLow, text=isCHoCH ? "choch" : "bos",
-              style=label.style_none,
-              textcolor=lineCol, size=size.tiny)
+    label.new(x=math.round((intBosLowBar + bar_index) / 2), y=intBosLow,
+              text=isCHoCH ? "choch" : "bos",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.tiny)
     intBias := -1
 
 // ─── BIAS BACKGROUND ───────────────────────────────────────────────────────
