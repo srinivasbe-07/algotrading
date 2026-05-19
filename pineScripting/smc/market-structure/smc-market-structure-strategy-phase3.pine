@@ -224,9 +224,7 @@ if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < i
     intBias := -1
 
 // ─── BIAS BACKGROUND ───────────────────────────────────────────────────────
-biasColor = extBias == 1  ? color.new(color.green, 90) :
-            extBias == -1 ? color.new(color.red,   90) :
-            color.new(color.gray, 95)
+biasColor = extBias == 1 ? color.new(color.green, 90) : extBias == -1 ? color.new(color.red, 90) : color.new(color.gray, 95)
 bgcolor(showBias ? biasColor : na, title="Bias Background")
 
 // ─── STRATEGY ENTRIES (placeholder — built in Phase 4) ─────────────────────
