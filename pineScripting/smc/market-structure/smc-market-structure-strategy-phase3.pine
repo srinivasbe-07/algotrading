@@ -79,11 +79,11 @@ if not na(intSwingHigh)
                      width=1, style=line.style_dashed)
             label.new(x=pivotBar, y=pivotPrice, text=isHH ? "hh" : "lh",
                       style=label.style_none,
-                      textcolor=isHH ? color.new(color.blue, 30) : color.new(color.red, 30), size=size.tiny)
+                      textcolor=isHH ? color.blue : color.red, size=size.tiny)
         else
             label.new(x=pivotBar, y=pivotPrice, text="sh",
                       style=label.style_none,
-                      textcolor=color.new(color.gray, 30), size=size.tiny)
+                      textcolor=color.gray, size=size.tiny)
     intLastHigh    := pivotPrice
     intLastHighBar := pivotBar
 
@@ -98,11 +98,11 @@ if not na(intSwingLow)
                      width=1, style=line.style_dashed)
             label.new(x=pivotBar, y=pivotPrice, text=isHL ? "hl" : "ll",
                       style=label.style_none,
-                      textcolor=isHL ? color.new(color.blue, 30) : color.new(color.red, 30), size=size.tiny)
+                      textcolor=isHL ? color.blue : color.red, size=size.tiny)
         else
             label.new(x=pivotBar, y=pivotPrice, text="sl",
                       style=label.style_none,
-                      textcolor=color.new(color.gray, 30), size=size.tiny)
+                      textcolor=color.gray, size=size.tiny)
     intLastLow    := pivotPrice
     intLastLowBar := pivotBar
 
@@ -200,7 +200,7 @@ if not na(intRunMax)
 if barstate.isconfirmed and not na(intBosHigh) and not intHighBroken and close > intBosHigh
     intHighBroken := true
     isCHoCH       = intBias == -1
-    lineCol       = isCHoCH ? color.new(color.orange, 20) : color.new(color.green, 20)
+    lineCol       = isCHoCH ? color.orange : color.green
     line.new(x1=intBosHighBar, y1=intBosHigh, x2=bar_index, y2=intBosHigh,
              color=lineCol, width=1, style=line.style_dotted)
     label.new(x=bar_index, y=intBosHigh, text=isCHoCH ? "choch" : "bos",
@@ -211,7 +211,7 @@ if barstate.isconfirmed and not na(intBosHigh) and not intHighBroken and close >
 if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < intBosLow
     intLowBroken := true
     isCHoCH      = intBias == 1
-    lineCol      = isCHoCH ? color.new(color.orange, 20) : color.new(color.red, 20)
+    lineCol      = isCHoCH ? color.orange : color.red
     line.new(x1=intBosLowBar, y1=intBosLow, x2=bar_index, y2=intBosLow,
              color=lineCol, width=1, style=line.style_dotted)
     label.new(x=bar_index, y=intBosLow, text=isCHoCH ? "choch" : "bos",
