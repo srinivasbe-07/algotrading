@@ -1,0 +1,118 @@
+//@version=6
+indicator("SMC - Market Structure Phase 2 (Structure Lines)", overlay=true,
+          max_lines_count=500, max_labels_count=500)
+
+// ─── INPUTS ────────────────────────────────────────────────────────────────
+extLeft  = input.int(10, "External Left Bars",  minval=1, group="External Structure")
+extRight = input.int(10, "External Right Bars", minval=1, group="External Structure")
+
+intLeft  = input.int(3,  "Internal Left Bars",  minval=1, group="Internal Structure")
+intRight = input.int(3,  "Internal Right Bars", minval=1, group="Internal Structure")
+
+showExternal = input.bool(true, "Show External Structure", group="External Structure")
+showInternal = input.bool(true, "Show Internal Structure", group="Internal Structure")
+
+// ─── SWING DETECTION ───────────────────────────────────────────────────────
+extSwingHigh = ta.pivothigh(high, extLeft, extRight)
+extSwingLow  = ta.pivotlow(low,   extLeft, extRight)
+
+intSwingHigh = ta.pivothigh(high, intLeft, intRight)
+intSwingLow  = ta.pivotlow(low,   intLeft, intRight)
+
+// ─── EXTERNAL STRUCTURE ────────────────────────────────────────────────────
+var float extLastHigh    = na
+var int   extLastHighBar = na
+var float extLastLow     = na
+var int   extLastLowBar  = na
+
+if not na(extSwingHigh)
+    pivotBar   = bar_index - extRight
+    pivotPrice = extSwingHigh
+
+    if showExternal
+        if not na(extLastHigh)
+            isHH = pivotPrice > extLastHigh
+            line.new(x1=extLastHighBar, y1=extLastHigh, x2=pivotBar, y2=pivotPrice,
+                     color=isHH ? color.blue : color.red, width=2, style=line.style_solid)
+            label.new(x=pivotBar, y=pivotPrice, text=isHH ? "HH" : "LH",
+                      style=label.style_label_down,
+                      color=isHH ? color.blue : color.red,
+                      textcolor=color.white, size=size.small)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="SH",
+                      style=label.style_label_down,
+                      color=color.gray, textcolor=color.white, size=size.small)
+
+    extLastHigh    := pivotPrice
+    extLastHighBar := pivotBar
+
+if not na(extSwingLow)
+    pivotBar   = bar_index - extRight
+    pivotPrice = extSwingLow
+
+    if showExternal
+        if not na(extLastLow)
+            isHL = pivotPrice > extLastLow
+            line.new(x1=extLastLowBar, y1=extLastLow, x2=pivotBar, y2=pivotPrice,
+                     color=isHL ? color.blue : color.red, width=2, style=line.style_solid)
+            label.new(x=pivotBar, y=pivotPrice, text=isHL ? "HL" : "LL",
+                      style=label.style_label_up,
+                      color=isHL ? color.blue : color.red,
+                      textcolor=color.white, size=size.small)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="SL",
+                      style=label.style_label_up,
+                      color=color.gray, textcolor=color.white, size=size.small)
+
+    extLastLow    := pivotPrice
+    extLastLowBar := pivotBar
+
+// ─── INTERNAL STRUCTURE ────────────────────────────────────────────────────
+var float intLastHigh    = na
+var int   intLastHighBar = na
+var float intLastLow     = na
+var int   intLastLowBar  = na
+
+if not na(intSwingHigh)
+    pivotBar   = bar_index - intRight
+    pivotPrice = intSwingHigh
+
+    if showInternal
+        if not na(intLastHigh)
+            isHH = pivotPrice > intLastHigh
+            line.new(x1=intLastHighBar, y1=intLastHigh, x2=pivotBar, y2=pivotPrice,
+                     color=isHH ? color.new(color.blue, 50) : color.new(color.red, 50),
+                     width=1, style=line.style_dashed)
+            label.new(x=pivotBar, y=pivotPrice, text=isHH ? "hh" : "lh",
+                      style=label.style_label_down,
+                      color=isHH ? color.new(color.blue, 30) : color.new(color.red, 30),
+                      textcolor=color.white, size=size.tiny)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="sh",
+                      style=label.style_label_down,
+                      color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny)
+
+    intLastHigh    := pivotPrice
+    intLastHighBar := pivotBar
+
+if not na(intSwingLow)
+    pivotBar   = bar_index - intRight
+    pivotPrice = intSwingLow
+
+    if showInternal
+        if not na(intLastLow)
+            isHL = pivotPrice > intLastLow
+            line.new(x1=intLastLowBar, y1=intLastLow, x2=pivotBar, y2=pivotPrice,
+                     color=isHL ? color.new(color.blue, 50) : color.new(color.red, 50),
+                     width=1, style=line.style_dashed)
+            label.new(x=pivotBar, y=pivotPrice, text=isHL ? "hl" : "ll",
+                      style=label.style_label_up,
+                      color=isHL ? color.new(color.blue, 30) : color.new(color.red, 30),
+                      textcolor=color.white, size=size.tiny)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="sl",
+                      style=label.style_label_up,
+                      color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny)
+
+    intLastLow    := pivotPrice
+    intLastLowBar := pivotBar
