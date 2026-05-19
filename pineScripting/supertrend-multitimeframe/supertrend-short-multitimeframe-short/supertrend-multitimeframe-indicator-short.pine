@@ -5,7 +5,7 @@ atrPeriod       = input.int(10,    "ATR Length",         minval = 1)
 factor          = input.float(3.0, "Factor",             minval = 0.01, step = 0.01)
 higherTimeFrame = input.timeframe("3",  "Higher Timeframe")
 lowerTimeFrame  = input.timeframe("1",  "Lower Timeframe")
-slPoints        = input.float(15.0, "Stop Loss Points",  minval = 0.5, step = 0.5)
+
 
 [l_supertrend, l_direction] = request.security(syminfo.tickerid, lowerTimeFrame, ta.supertrend(factor, atrPeriod))
 l_supertrend := barstate.isfirst ? na : l_supertrend
@@ -26,36 +26,27 @@ fill(h_bodyMiddle, h_upTrend,   title = "Uptrend background",   color = color.ne
 fill(h_bodyMiddle, h_downTrend, title = "Downtrend background", color = color.new(color.red,   90), fillgaps = false)
 
 // Signal conditions
-var int   shortC     = 0
-var float entryPrice = na
+var int shortC = 0
 
 // Reset all state at the start of each new trading day
 if ta.change(time("D")) != 0
-    shortC     := 0
-    entryPrice := na
+    shortC := 0
 
 crossL     = ta.crossunder(close, l_supertrend)
 crossH     = ta.crossunder(close, h_supertrend)
 
-slHit      = shortC != 0 and not na(entryPrice) and high >= entryPrice + slPoints
 shortExit  = shortC != 0 and (close > l_supertrend or close > h_supertrend) and barstate.isconfirmed
 shortEntry = shortC == 0 and ((crossL and close < h_supertrend) or (crossH and close < l_supertrend)) and barstate.isconfirmed
 
-if shortExit or slHit
-    shortC     := 0
-    entryPrice := na
+if shortExit
+    shortC := 0
 if shortEntry
-    shortC     := 1
-    entryPrice := close
-
-// Plot fixed SL line
-plot(shortC != 0 ? entryPrice + slPoints : na, "Stop Loss", color = color.orange, style = plot.style_linebr, linewidth = 1)
+    shortC := 1
 
 // ===== ALERTS ===== //
-alertcondition(shortEntry,          "Short Entry Alert", "supertrend: SELL")
-alertcondition(shortExit or slHit,  "Short Close Alert", "supertrend: CLOSE SHORT")
+alertcondition(shortEntry, "Short Entry Alert", "supertrend: SELL")
+alertcondition(shortExit,  "Short Close Alert", "supertrend: CLOSE SHORT")
 
 // Plot signals
-plotshape(shortEntry, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.red,    text="Short")
-plotshape(shortExit,  title="Short Exit",  style=shape.arrowup,   location=location.belowbar, color=color.green,  text="Exit Short")
-plotshape(slHit,      title="SL Hit",      style=shape.xcross,    location=location.abovebar, color=color.orange, text="SL")
+plotshape(shortEntry, title="Short Entry", style=shape.arrowdown, location=location.abovebar, color=color.red,   text="Short")
+plotshape(shortExit,  title="Short Exit",  style=shape.arrowup,   location=location.belowbar, color=color.green, text="Exit Short")
