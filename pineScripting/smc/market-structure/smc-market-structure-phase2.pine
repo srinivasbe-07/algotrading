@@ -3,9 +3,15 @@ indicator("SMC - Market Structure Phase 2 (Structure Lines)", overlay=true,
           max_lines_count=500, max_labels_count=500)
 
 // ─── INPUTS ────────────────────────────────────────────────────────────────
+// External structure uses a larger pivot window (10 bars each side) to identify
+// major swing highs/lows that represent the big picture market trend.
+// More bars = fewer but more significant swings detected.
 extLeft  = input.int(10, "External Left Bars",  minval=1, group="External Structure")
 extRight = input.int(10, "External Right Bars", minval=1, group="External Structure")
 
+// Internal structure uses a smaller window (3 bars each side) to catch
+// minor swings and short-term price movements within the larger trend.
+// Fewer bars = more swings detected, useful for timing entries.
 intLeft  = input.int(3,  "Internal Left Bars",  minval=1, group="Internal Structure")
 intRight = input.int(3,  "Internal Right Bars", minval=1, group="Internal Structure")
 
@@ -13,24 +19,36 @@ showExternal = input.bool(true, "Show External Structure", group="External Struc
 showInternal = input.bool(true, "Show Internal Structure", group="Internal Structure")
 
 // ─── SWING DETECTION ───────────────────────────────────────────────────────
+// ta.pivothigh returns the high value when a swing high is confirmed.
+// A swing high requires extLeft lower bars to its LEFT and extRight lower bars to its RIGHT.
+// Because of the right bar requirement, the pivot is confirmed extRight bars LATE —
+// the actual pivot bar was at bar_index - extRight in the past.
 extSwingHigh = ta.pivothigh(high, extLeft, extRight)
 extSwingLow  = ta.pivotlow(low,   extLeft, extRight)
 
+// Same logic for internal swings using smaller left/right bar counts.
 intSwingHigh = ta.pivothigh(high, intLeft, intRight)
 intSwingLow  = ta.pivotlow(low,   intLeft, intRight)
 
 // ─── EXTERNAL STRUCTURE ────────────────────────────────────────────────────
-var float extLastHigh    = na
-var int   extLastHighBar = na
-var float extLastLow     = na
-var int   extLastLowBar  = na
+// These var variables persist across all bars (unlike normal variables which reset).
+// They store the previous swing so the next swing can be compared against it
+// to determine if we have a Higher High, Lower High, Higher Low, or Lower Low.
+var float extLastHigh    = na  // price of the previous external swing high
+var int   extLastHighBar = na  // bar index of the previous external swing high
+var float extLastLow     = na  // price of the previous external swing low
+var int   extLastLowBar  = na  // bar index of the previous external swing low
 
 if not na(extSwingHigh)
+    // The pivot actually occurred extRight bars ago, not at the current bar
     pivotBar   = bar_index - extRight
     pivotPrice = extSwingHigh
 
     if showExternal
         if not na(extLastHigh)
+            // Compare this swing high to the previous one to classify structure
+            // HH (Higher High) = bullish structure → blue solid line
+            // LH (Lower High)  = bearish structure → red solid line
             isHH = pivotPrice > extLastHigh
             line.new(x1=extLastHighBar, y1=extLastHigh, x2=pivotBar, y2=pivotPrice,
                      color=isHH ? color.blue : color.red, width=2, style=line.style_solid)
@@ -39,10 +57,12 @@ if not na(extSwingHigh)
                       color=isHH ? color.blue : color.red,
                       textcolor=color.white, size=size.small)
         else
+            // SH = Starting High — the very first swing high, no previous to compare
             label.new(x=pivotBar, y=pivotPrice, text="SH",
                       style=label.style_label_down,
                       color=color.gray, textcolor=color.white, size=size.small)
 
+    // Save this swing as the new "previous" for the next comparison
     extLastHigh    := pivotPrice
     extLastHighBar := pivotBar
 
@@ -52,6 +72,9 @@ if not na(extSwingLow)
 
     if showExternal
         if not na(extLastLow)
+            // Compare this swing low to the previous one to classify structure
+            // HL (Higher Low) = bullish structure → blue solid line
+            // LL (Lower Low)  = bearish structure → red solid line
             isHL = pivotPrice > extLastLow
             line.new(x1=extLastLowBar, y1=extLastLow, x2=pivotBar, y2=pivotPrice,
                      color=isHL ? color.blue : color.red, width=2, style=line.style_solid)
@@ -60,6 +83,7 @@ if not na(extSwingLow)
                       color=isHL ? color.blue : color.red,
                       textcolor=color.white, size=size.small)
         else
+            // SL = Starting Low — the very first swing low, no previous to compare
             label.new(x=pivotBar, y=pivotPrice, text="SL",
                       style=label.style_label_up,
                       color=color.gray, textcolor=color.white, size=size.small)
@@ -68,6 +92,11 @@ if not na(extSwingLow)
     extLastLowBar := pivotBar
 
 // ─── INTERNAL STRUCTURE ────────────────────────────────────────────────────
+// Exact same logic as external structure but uses smaller pivot settings.
+// Visual differences to distinguish internal from external:
+//   - Lines: dashed instead of solid, thinner width (1 vs 2)
+//   - Labels: tiny size, lowercase text (hh/hl/lh/ll vs HH/HL/LH/LL)
+//   - Colors: 50% transparent to appear less dominant on the chart
 var float intLastHigh    = na
 var int   intLastHighBar = na
 var float intLastLow     = na
@@ -80,6 +109,7 @@ if not na(intSwingHigh)
     if showInternal
         if not na(intLastHigh)
             isHH = pivotPrice > intLastHigh
+            // 50% transparency makes internal lines visually secondary to external
             line.new(x1=intLastHighBar, y1=intLastHigh, x2=pivotBar, y2=pivotPrice,
                      color=isHH ? color.new(color.blue, 50) : color.new(color.red, 50),
                      width=1, style=line.style_dashed)

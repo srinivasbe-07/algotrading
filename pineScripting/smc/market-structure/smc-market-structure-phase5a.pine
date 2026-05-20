@@ -1,0 +1,427 @@
+//@version=6
+indicator("SMC - Market Structure Phase 5a (Order Blocks)", overlay=true,
+          max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+
+// ─── INPUTS ────────────────────────────────────────────────────────────────
+// External structure: large pivot window captures major swing highs/lows (big picture trend)
+extLeft  = input.int(10, "External Left Bars",  minval=1, group="External Structure")
+extRight = input.int(10, "External Right Bars", minval=1, group="External Structure")
+// Internal structure: small pivot window captures minor swings within the larger trend
+intLeft  = input.int(3,  "Internal Left Bars",  minval=1, group="Internal Structure")
+intRight = input.int(3,  "Internal Right Bars", minval=1, group="Internal Structure")
+
+showExternal  = input.bool(true, "Show External Structure",     group="External Structure")
+showInternal  = input.bool(true, "Show Internal Structure",     group="Internal Structure")
+showChochLine = input.bool(true, "Show CHoCH Protection Level", group="Display")
+showBias      = input.bool(true, "Show Bias Background",        group="Display")
+
+// Order Block display options
+// Classic OB  = full candle zone (high to low of OB candle)
+// Refined OB  = body only zone (open to close of OB candle) — tighter, more precise
+showClassicOB = input.bool(true, "Show Classic OB (Full Candle)", group="Order Blocks")
+showRefinedOB = input.bool(true, "Show Refined OB (Body Only)",   group="Order Blocks")
+// maxOBCount limits how many OBs stay on chart to avoid clutter and box limit issues
+maxOBCount    = input.int(10, "Max Active OBs to Show", minval=1, maxval=50, group="Order Blocks")
+bullOBColor   = input.color(color.new(color.green, 75), "Bullish OB Color", group="Order Blocks")
+bearOBColor   = input.color(color.new(color.red,   75), "Bearish OB Color", group="Order Blocks")
+
+// ─── SWING DETECTION ───────────────────────────────────────────────────────
+// Pivot is confirmed extRight bars LATE — actual bar was at bar_index - extRight
+extSwingHigh = ta.pivothigh(high, extLeft, extRight)
+extSwingLow  = ta.pivotlow(low,   extLeft, extRight)
+intSwingHigh = ta.pivothigh(high, intLeft, intRight)
+intSwingLow  = ta.pivotlow(low,   intLeft, intRight)
+
+// ─── EXTERNAL STRUCTURE LINES + LABELS ────────────────────────────────────
+var float extLastHigh    = na
+var int   extLastHighBar = na
+var float extLastLow     = na
+var int   extLastLowBar  = na
+
+if not na(extSwingHigh)
+    pivotBar   = bar_index - extRight
+    pivotPrice = extSwingHigh
+    if showExternal
+        if not na(extLastHigh)
+            // HH = Higher High (bullish) → blue | LH = Lower High (bearish) → red
+            isHH = pivotPrice > extLastHigh
+            line.new(x1=extLastHighBar, y1=extLastHigh, x2=pivotBar, y2=pivotPrice,
+                     color=isHH ? color.blue : color.red, width=2, style=line.style_solid)
+            label.new(x=pivotBar, y=pivotPrice, text=isHH ? "HH" : "LH",
+                      yloc=yloc.abovebar, style=label.style_none,
+                      textcolor=isHH ? color.blue : color.red, size=size.small)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="SH",
+                      yloc=yloc.abovebar, style=label.style_none,
+                      textcolor=color.gray, size=size.small)
+    extLastHigh    := pivotPrice
+    extLastHighBar := pivotBar
+
+if not na(extSwingLow)
+    pivotBar   = bar_index - extRight
+    pivotPrice = extSwingLow
+    if showExternal
+        if not na(extLastLow)
+            // HL = Higher Low (bullish) → blue | LL = Lower Low (bearish) → red
+            isHL = pivotPrice > extLastLow
+            line.new(x1=extLastLowBar, y1=extLastLow, x2=pivotBar, y2=pivotPrice,
+                     color=isHL ? color.blue : color.red, width=2, style=line.style_solid)
+            label.new(x=pivotBar, y=pivotPrice, text=isHL ? "HL" : "LL",
+                      yloc=yloc.belowbar, style=label.style_none,
+                      textcolor=isHL ? color.blue : color.red, size=size.small)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="SL",
+                      yloc=yloc.belowbar, style=label.style_none,
+                      textcolor=color.gray, size=size.small)
+    extLastLow    := pivotPrice
+    extLastLowBar := pivotBar
+
+// ─── INTERNAL STRUCTURE LINES + LABELS ────────────────────────────────────
+// Same logic as external — dashed lines, transparent colors, tiny lowercase labels
+var float intLastHigh    = na
+var int   intLastHighBar = na
+var float intLastLow     = na
+var int   intLastLowBar  = na
+
+if not na(intSwingHigh)
+    pivotBar   = bar_index - intRight
+    pivotPrice = intSwingHigh
+    if showInternal
+        if not na(intLastHigh)
+            isHH = pivotPrice > intLastHigh
+            line.new(x1=intLastHighBar, y1=intLastHigh, x2=pivotBar, y2=pivotPrice,
+                     color=isHH ? color.new(color.blue, 50) : color.new(color.red, 50),
+                     width=1, style=line.style_dashed)
+            label.new(x=pivotBar, y=pivotPrice, text=isHH ? "hh" : "lh",
+                      yloc=yloc.abovebar, style=label.style_none,
+                      textcolor=isHH ? color.blue : color.red, size=size.tiny)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="sh",
+                      yloc=yloc.abovebar, style=label.style_none,
+                      textcolor=color.gray, size=size.tiny)
+    intLastHigh    := pivotPrice
+    intLastHighBar := pivotBar
+
+if not na(intSwingLow)
+    pivotBar   = bar_index - intRight
+    pivotPrice = intSwingLow
+    if showInternal
+        if not na(intLastLow)
+            isHL = pivotPrice > intLastLow
+            line.new(x1=intLastLowBar, y1=intLastLow, x2=pivotBar, y2=pivotPrice,
+                     color=isHL ? color.new(color.blue, 50) : color.new(color.red, 50),
+                     width=1, style=line.style_dashed)
+            label.new(x=pivotBar, y=pivotPrice, text=isHL ? "hl" : "ll",
+                      yloc=yloc.belowbar, style=label.style_none,
+                      textcolor=isHL ? color.blue : color.red, size=size.tiny)
+        else
+            label.new(x=pivotBar, y=pivotPrice, text="sl",
+                      yloc=yloc.belowbar, style=label.style_none,
+                      textcolor=color.gray, size=size.tiny)
+    intLastLow    := pivotPrice
+    intLastLowBar := pivotBar
+
+// ─── ORDER BLOCK ARRAYS ───────────────────────────────────────────────────
+// All OB data is stored in parallel arrays — index i across all arrays = same OB.
+var array<float> obClassTop = array.new<float>()  // OB candle high  (classic zone top)
+var array<float> obClassBot = array.new<float>()  // OB candle low   (classic zone bottom)
+var array<float> obRefTop   = array.new<float>()  // max(open,close) (refined zone top)
+var array<float> obRefBot   = array.new<float>()  // min(open,close) (refined zone bottom)
+var array<int>   obLeftBar  = array.new<int>()    // bar index of OB candle (box left edge)
+var array<bool>  obIsBull   = array.new<bool>()   // true = bullish OB, false = bearish OB
+var array<bool>  obActive   = array.new<bool>()   // true = zone not yet entered by price
+var array<box>   obClassBox = array.new<box>()    // classic OB box drawing object
+var array<box>   obRefBox   = array.new<box>()    // refined OB box drawing object
+
+// ─── EXTERNAL BOS / CHoCH + OB CREATION ──────────────────────────────────
+// extBias tracks current big-picture market direction:
+//   0 = no bias yet | 1 = bullish | -1 = bearish
+var int   extBias       = 0
+var float extBosHigh    = na
+var int   extBosHighBar = na
+var bool  extHighBroken = false
+var float extBosLow     = na
+var int   extBosLowBar  = na
+var bool  extLowBroken  = false
+
+// extRunMin = lowest low since last swing high was confirmed
+// When bullish BOS fires, the candle at extRunMinBar = Bullish OB candle
+// (it took the most liquidity / grabbed the most stop losses before price shot up)
+var float extRunMin    = na
+var int   extRunMinBar = na   // bar index of the candle with the lowest low
+
+// extRunMax = highest high since last swing low was confirmed
+// When bearish BOS fires, the candle at extRunMaxBar = Bearish OB candle
+var float extRunMax    = na
+var int   extRunMaxBar = na   // bar index of the candle with the highest high
+
+var line  extChochLine = na
+
+// When a new swing high is detected, store it as the BOS candidate and
+// start tracking the lowest low from this point.
+// ta.lowestbars returns how many bars ago the lowest low occurred within extRight bars.
+if not na(extSwingHigh)
+    extBosHigh    := extSwingHigh
+    extBosHighBar := bar_index - extRight
+    extHighBroken := false
+    extRunMin     := ta.lowest(low,  extRight)
+    extRunMinBar  := bar_index - ta.lowestbars(low,  extRight)
+
+if not na(extSwingLow)
+    extBosLow    := extSwingLow
+    extBosLowBar := bar_index - extRight
+    extLowBroken := false
+    extRunMax    := ta.highest(high, extRight)
+    extRunMaxBar := bar_index - ta.highestbars(high, extRight)
+
+// Every bar: update running extremes and track which bar holds them
+if not na(extRunMin)
+    if low < extRunMin
+        extRunMin    := low
+        extRunMinBar := bar_index
+if not na(extRunMax)
+    if high > extRunMax
+        extRunMax    := high
+        extRunMaxBar := bar_index
+
+// ── Bullish BOS/CHoCH → Create Bullish OB ────────────────────────────────
+// Fires when price closes above the last external swing high.
+if barstate.isconfirmed and not na(extBosHigh) and not extHighBroken and close > extBosHigh
+    extHighBroken := true
+    isCHoCH       = extBias == -1  // was bearish → now reversing up = CHoCH
+    lineCol       = isCHoCH ? color.orange : color.green
+    line.new(x1=extBosHighBar, y1=extBosHigh, x2=bar_index, y2=extBosHigh,
+             color=lineCol, width=2, style=line.style_dotted)
+    label.new(x=math.round((extBosHighBar + bar_index) / 2), y=extBosHigh,
+              text=isCHoCH ? "CHoCH" : "BOS",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.small)
+    extBias := 1
+    if showChochLine
+        if not na(extChochLine)
+            line.delete(extChochLine)
+        extChochLine := line.new(x1=extBosHighBar, y1=extRunMin, x2=bar_index, y2=extRunMin,
+                                  color=color.yellow, width=1, style=line.style_dashed,
+                                  extend=extend.right)
+
+    // Create Bullish OB at the candle with the lowest low before this BOS.
+    // That candle swept sell-side liquidity (stop losses) before institutions pushed price up.
+    // obOffset = how many bars ago that candle was from current bar.
+    if not na(extRunMinBar)
+        obOffset = bar_index - extRunMinBar
+        obHi     = high[obOffset]  // full candle high (classic top)
+        obLo     = low[obOffset]   // full candle low  (classic bottom) = extRunMin
+        obOp     = open[obOffset]
+        obCl     = close[obOffset]
+        refT     = math.max(obOp, obCl)  // body top    (refined zone)
+        refB     = math.min(obOp, obCl)  // body bottom (refined zone)
+
+        // Classic OB box: full candle high to low with text label inside
+        cBox = showClassicOB ? box.new(left=extRunMinBar, top=obHi, right=bar_index,
+                                        bottom=obLo, extend=extend.right,
+                                        border_color=color.green, border_width=1,
+                                        bgcolor=bullOBColor,
+                                        text="Bull OB", text_color=color.white,
+                                        text_size=size.small, text_valign=text.align_top,
+                                        text_halign=text.align_right) : na
+
+        // Refined OB box: body only — sits inside classic box as a tighter zone
+        rBox = showRefinedOB ? box.new(left=extRunMinBar, top=refT, right=bar_index,
+                                        bottom=refB, extend=extend.right,
+                                        border_color=color.new(color.green, 20), border_width=2,
+                                        bgcolor=color.new(color.green, 60),
+                                        text="Ref", text_color=color.white,
+                                        text_size=size.tiny, text_valign=text.align_top,
+                                        text_halign=text.align_right) : na
+
+        // Store OB in tracking arrays
+        array.push(obClassTop, obHi)
+        array.push(obClassBot, obLo)
+        array.push(obRefTop,   refT)
+        array.push(obRefBot,   refB)
+        array.push(obLeftBar,  extRunMinBar)
+        array.push(obIsBull,   true)
+        array.push(obActive,   true)
+        array.push(obClassBox, cBox)
+        array.push(obRefBox,   rBox)
+
+        // Remove oldest OB if we exceeded the max count
+        while array.size(obActive) > maxOBCount
+            cb = array.shift(obClassBox)
+            rb = array.shift(obRefBox)
+            if not na(cb)
+                box.delete(cb)
+            if not na(rb)
+                box.delete(rb)
+            array.shift(obClassTop)
+            array.shift(obClassBot)
+            array.shift(obRefTop)
+            array.shift(obRefBot)
+            array.shift(obLeftBar)
+            array.shift(obIsBull)
+            array.shift(obActive)
+
+// ── Bearish BOS/CHoCH → Create Bearish OB ────────────────────────────────
+// Fires when price closes below the last external swing low.
+if barstate.isconfirmed and not na(extBosLow) and not extLowBroken and close < extBosLow
+    extLowBroken := true
+    isCHoCH      = extBias == 1  // was bullish → now reversing down = CHoCH
+    lineCol      = isCHoCH ? color.orange : color.red
+    line.new(x1=extBosLowBar, y1=extBosLow, x2=bar_index, y2=extBosLow,
+             color=lineCol, width=2, style=line.style_dotted)
+    label.new(x=math.round((extBosLowBar + bar_index) / 2), y=extBosLow,
+              text=isCHoCH ? "CHoCH" : "BOS",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.small)
+    extBias := -1
+    if showChochLine
+        if not na(extChochLine)
+            line.delete(extChochLine)
+        extChochLine := line.new(x1=extBosLowBar, y1=extRunMax, x2=bar_index, y2=extRunMax,
+                                  color=color.yellow, width=1, style=line.style_dashed,
+                                  extend=extend.right)
+
+    // Create Bearish OB at the candle with the highest high before this BOS.
+    // That candle swept buy-side liquidity (stop losses) before institutions pushed price down.
+    if not na(extRunMaxBar)
+        obOffset = bar_index - extRunMaxBar
+        obHi     = high[obOffset]
+        obLo     = low[obOffset]
+        obOp     = open[obOffset]
+        obCl     = close[obOffset]
+        refT     = math.max(obOp, obCl)
+        refB     = math.min(obOp, obCl)
+
+        cBox = showClassicOB ? box.new(left=extRunMaxBar, top=obHi, right=bar_index,
+                                        bottom=obLo, extend=extend.right,
+                                        border_color=color.red, border_width=1,
+                                        bgcolor=bearOBColor,
+                                        text="Bear OB", text_color=color.white,
+                                        text_size=size.small, text_valign=text.align_top,
+                                        text_halign=text.align_right) : na
+
+        rBox = showRefinedOB ? box.new(left=extRunMaxBar, top=refT, right=bar_index,
+                                        bottom=refB, extend=extend.right,
+                                        border_color=color.new(color.red, 20), border_width=2,
+                                        bgcolor=color.new(color.red, 60),
+                                        text="Ref", text_color=color.white,
+                                        text_size=size.tiny, text_valign=text.align_top,
+                                        text_halign=text.align_right) : na
+
+        array.push(obClassTop, obHi)
+        array.push(obClassBot, obLo)
+        array.push(obRefTop,   refT)
+        array.push(obRefBot,   refB)
+        array.push(obLeftBar,  extRunMaxBar)
+        array.push(obIsBull,   false)
+        array.push(obActive,   true)
+        array.push(obClassBox, cBox)
+        array.push(obRefBox,   rBox)
+
+        while array.size(obActive) > maxOBCount
+            cb = array.shift(obClassBox)
+            rb = array.shift(obRefBox)
+            if not na(cb)
+                box.delete(cb)
+            if not na(rb)
+                box.delete(rb)
+            array.shift(obClassTop)
+            array.shift(obClassBot)
+            array.shift(obRefTop)
+            array.shift(obRefBot)
+            array.shift(obLeftBar)
+            array.shift(obIsBull)
+            array.shift(obActive)
+
+// ─── INTERNAL BOS / CHoCH ─────────────────────────────────────────────────
+// Same BOS/CHoCH logic as external but on smaller internal swings.
+// No OBs created for internal in Phase 5a — external OBs only.
+var int   intBias       = 0
+var float intBosHigh    = na
+var int   intBosHighBar = na
+var bool  intHighBroken = false
+var float intBosLow     = na
+var int   intBosLowBar  = na
+var bool  intLowBroken  = false
+var float intRunMin     = na
+var float intRunMax     = na
+
+if not na(intSwingHigh)
+    intBosHigh    := intSwingHigh
+    intBosHighBar := bar_index - intRight
+    intHighBroken := false
+    intRunMin     := ta.lowest(low, intRight)
+
+if not na(intSwingLow)
+    intBosLow    := intSwingLow
+    intBosLowBar := bar_index - intRight
+    intLowBroken := false
+    intRunMax    := ta.highest(high, intRight)
+
+if not na(intRunMin)
+    intRunMin := math.min(intRunMin, low)
+if not na(intRunMax)
+    intRunMax := math.max(intRunMax, high)
+
+if barstate.isconfirmed and not na(intBosHigh) and not intHighBroken and close > intBosHigh
+    intHighBroken := true
+    isCHoCH       = intBias == -1
+    lineCol       = isCHoCH ? color.orange : color.green
+    line.new(x1=intBosHighBar, y1=intBosHigh, x2=bar_index, y2=intBosHigh,
+             color=lineCol, width=1, style=line.style_dotted)
+    label.new(x=math.round((intBosHighBar + bar_index) / 2), y=intBosHigh,
+              text=isCHoCH ? "choch" : "bos",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.tiny)
+    intBias := 1
+
+if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < intBosLow
+    intLowBroken := true
+    isCHoCH      = intBias == 1
+    lineCol      = isCHoCH ? color.orange : color.red
+    line.new(x1=intBosLowBar, y1=intBosLow, x2=bar_index, y2=intBosLow,
+             color=lineCol, width=1, style=line.style_dotted)
+    label.new(x=math.round((intBosLowBar + bar_index) / 2), y=intBosLow,
+              text=isCHoCH ? "choch" : "bos",
+              style=label.style_label_center, color=lineCol,
+              textcolor=color.white, size=size.tiny)
+    intBias := -1
+
+// ─── OB MITIGATION CHECK ──────────────────────────────────────────────────
+// Every bar: loop through all active OBs and check if price has entered the zone.
+// Bullish OB mitigated when: low <= classicTop  (price dips into the zone from above)
+// Bearish OB mitigated when: high >= classicBot (price rises into the zone from below)
+// On mitigation: gray out both boxes and stop extending them.
+if array.size(obActive) > 0
+    for i = 0 to array.size(obActive) - 1
+        if array.get(obActive, i)
+            isBull   = array.get(obIsBull,   i)
+            classTop = array.get(obClassTop, i)
+            classBot = array.get(obClassBot, i)
+
+            mitigated = isBull ? low <= classTop : high >= classBot
+
+            if mitigated
+                array.set(obActive, i, false)
+                cb = array.get(obClassBox, i)
+                rb = array.get(obRefBox,   i)
+                // Stop extending and gray out the classic OB box
+                if not na(cb)
+                    box.set_right(cb,         bar_index)
+                    box.set_extend(cb,        extend.none)
+                    box.set_bgcolor(cb,       color.new(color.gray, 88))
+                    box.set_border_color(cb,  color.new(color.gray, 50))
+                    box.set_text(cb,          "✓ OB")
+                // Stop extending and gray out the refined OB box
+                if not na(rb)
+                    box.set_right(rb,         bar_index)
+                    box.set_extend(rb,        extend.none)
+                    box.set_bgcolor(rb,       color.new(color.gray, 80))
+                    box.set_border_color(rb,  color.new(color.gray, 30))
+                    box.set_text(rb,          "")
+
+// ─── BIAS BACKGROUND ──────────────────────────────────────────────────────
+// Green background = bullish bias, Red = bearish bias, Gray = no bias yet.
+// 90% transparency keeps background subtle so candles remain visible.
+biasColor = extBias == 1 ? color.new(color.green, 90) : extBias == -1 ? color.new(color.red, 90) : color.new(color.gray, 95)
+bgcolor(showBias ? biasColor : na, title="Bias Background")

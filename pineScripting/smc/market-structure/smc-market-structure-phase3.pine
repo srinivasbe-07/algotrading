@@ -3,8 +3,13 @@ indicator("SMC - Market Structure Phase 3 (BOS & CHoCH)", overlay=true,
           max_lines_count=500, max_labels_count=500)
 
 // ─── INPUTS ────────────────────────────────────────────────────────────────
+// External structure uses larger pivot lookback (10 bars each side) to capture
+// major swing highs/lows that represent the big picture trend.
 extLeft  = input.int(10, "External Left Bars",  minval=1, group="External Structure")
 extRight = input.int(10, "External Right Bars", minval=1, group="External Structure")
+
+// Internal structure uses smaller lookback (3 bars each side) to capture
+// minor swings and short-term moves within the bigger trend.
 intLeft  = input.int(3,  "Internal Left Bars",  minval=1, group="Internal Structure")
 intRight = input.int(3,  "Internal Right Bars", minval=1, group="Internal Structure")
 
@@ -14,22 +19,33 @@ showChochLine = input.bool(true, "Show CHoCH Protection Level", group="Display")
 showBias      = input.bool(true, "Show Bias Background",        group="Display")
 
 // ─── SWING DETECTION ───────────────────────────────────────────────────────
+// ta.pivothigh returns the high value when a swing high is confirmed.
+// A swing high is confirmed only after extRight bars have passed to its right.
+// So the actual pivot occurred at bar_index - extRight (in the past).
 extSwingHigh = ta.pivothigh(high, extLeft, extRight)
 extSwingLow  = ta.pivotlow(low,   extLeft, extRight)
+
+// Same logic for internal swings but with smaller left/right bar counts.
 intSwingHigh = ta.pivothigh(high, intLeft, intRight)
 intSwingLow  = ta.pivotlow(low,   intLeft, intRight)
 
-// ─── EXTERNAL STRUCTURE LINES + LABELS (Phase 2) ───────────────────────────
-var float extLastHigh    = na
-var int   extLastHighBar = na
-var float extLastLow     = na
-var int   extLastLowBar  = na
+// ─── EXTERNAL STRUCTURE LINES + LABELS (carried over from Phase 2) ─────────
+// These var variables persist across bars, storing the previous swing
+// so we can compare each new swing against it (HH/HL/LH/LL detection).
+var float extLastHigh    = na  // price of the previous external swing high
+var int   extLastHighBar = na  // bar index of the previous external swing high
+var float extLastLow     = na  // price of the previous external swing low
+var int   extLastLowBar  = na  // bar index of the previous external swing low
 
 if not na(extSwingHigh)
+    // The pivot happened extRight bars ago, not at current bar
     pivotBar   = bar_index - extRight
     pivotPrice = extSwingHigh
+
     if showExternal
         if not na(extLastHigh)
+            // HH = Higher High (bullish structure) → blue line
+            // LH = Lower High  (bearish structure) → red line
             isHH = pivotPrice > extLastHigh
             line.new(x1=extLastHighBar, y1=extLastHigh, x2=pivotBar, y2=pivotPrice,
                      color=isHH ? color.blue : color.red, width=2, style=line.style_solid)
@@ -37,17 +53,22 @@ if not na(extSwingHigh)
                       yloc=yloc.abovebar, style=label.style_none,
                       textcolor=isHH ? color.blue : color.red, size=size.small)
         else
+            // SH = Starting High, the very first swing high detected
             label.new(x=pivotBar, y=pivotPrice, text="SH",
                       yloc=yloc.abovebar, style=label.style_none,
                       textcolor=color.gray, size=size.small)
+    // Update the stored previous swing high for next comparison
     extLastHigh    := pivotPrice
     extLastHighBar := pivotBar
 
 if not na(extSwingLow)
     pivotBar   = bar_index - extRight
     pivotPrice = extSwingLow
+
     if showExternal
         if not na(extLastLow)
+            // HL = Higher Low (bullish structure) → blue line
+            // LL = Lower Low  (bearish structure) → red line
             isHL = pivotPrice > extLastLow
             line.new(x1=extLastLowBar, y1=extLastLow, x2=pivotBar, y2=pivotPrice,
                      color=isHL ? color.blue : color.red, width=2, style=line.style_solid)
@@ -55,13 +76,17 @@ if not na(extSwingLow)
                       yloc=yloc.belowbar, style=label.style_none,
                       textcolor=isHL ? color.blue : color.red, size=size.small)
         else
+            // SL = Starting Low, the very first swing low detected
             label.new(x=pivotBar, y=pivotPrice, text="SL",
                       yloc=yloc.belowbar, style=label.style_none,
                       textcolor=color.gray, size=size.small)
     extLastLow    := pivotPrice
     extLastLowBar := pivotBar
 
-// ─── INTERNAL STRUCTURE LINES + LABELS (Phase 2) ───────────────────────────
+// ─── INTERNAL STRUCTURE LINES + LABELS (carried over from Phase 2) ─────────
+// Same logic as external but uses smaller pivot settings.
+// Lines are dashed and thinner, labels are tiny and lowercase to visually
+// distinguish internal from external structure.
 var float intLastHigh    = na
 var int   intLastHighBar = na
 var float intLastLow     = na
@@ -70,6 +95,7 @@ var int   intLastLowBar  = na
 if not na(intSwingHigh)
     pivotBar   = bar_index - intRight
     pivotPrice = intSwingHigh
+
     if showInternal
         if not na(intLastHigh)
             isHH = pivotPrice > intLastHigh
@@ -89,6 +115,7 @@ if not na(intSwingHigh)
 if not na(intSwingLow)
     pivotBar   = bar_index - intRight
     pivotPrice = intSwingLow
+
     if showInternal
         if not na(intLastLow)
             isHL = pivotPrice > intLastLow
@@ -106,22 +133,39 @@ if not na(intSwingLow)
     intLastLowBar := pivotBar
 
 // ─── EXTERNAL BOS / CHoCH ──────────────────────────────────────────────────
+// BOS  (Break of Structure)    = price breaks in the SAME direction as current bias
+//                                meaning the trend is continuing
+// CHoCH (Change of Character)  = price breaks in the OPPOSITE direction to current bias
+//                                meaning the trend may be reversing
+//
+// extBias tracks the current market direction based on the last BOS/CHoCH:
+//   0  = no bias yet (start of chart)
+//   1  = bullish (last break was upward)
+//  -1  = bearish (last break was downward)
+
 var int   extBias       = 0
-var float extBosHigh    = na
-var int   extBosHighBar = na
-var bool  extHighBroken = false
-var float extBosLow     = na
+var float extBosHigh    = na     // last swing high — watched for an upward break
+var int   extBosHighBar = na     // bar index of that swing high
+var bool  extHighBroken = false  // true once price has closed above extBosHigh
+var float extBosLow     = na     // last swing low — watched for a downward break
 var int   extBosLowBar  = na
 var bool  extLowBroken  = false
-var float extRunMin     = na   // lowest low since last swing high = CHoCH level after BOS UP
-var float extRunMax     = na   // highest high since last swing low = CHoCH level after BOS DOWN
-var line  extChochLine  = na   // live CHoCH protection level line
+// extRunMin = lowest low since the last swing high was set.
+// When an upward BOS fires, this becomes the CHoCH protection level —
+// if price later drops below this, it signals the bullish move is failing.
+var float extRunMin     = na
+// extRunMax = highest high since the last swing low was set.
+// When a downward BOS fires, this becomes the CHoCH protection level.
+var float extRunMax     = na
+var line  extChochLine  = na     // the visible yellow dashed protection level line
 
+// When a new external swing high is detected, store it as the new BOS candidate
+// and begin tracking the lowest low from this point onward.
 if not na(extSwingHigh)
     extBosHigh    := extSwingHigh
     extBosHighBar := bar_index - extRight
-    extHighBroken := false
-    extRunMin     := ta.lowest(low, extRight)
+    extHighBroken := false                   // reset so this level can fire again
+    extRunMin     := ta.lowest(low, extRight) // seed RunMin with the pivot window lows
 
 if not na(extSwingLow)
     extBosLow    := extSwingLow
@@ -129,34 +173,46 @@ if not na(extSwingLow)
     extLowBroken := false
     extRunMax    := ta.highest(high, extRight)
 
+// Every bar, keep updating RunMin/RunMax so they always hold the
+// true extreme since the last swing was detected.
 if not na(extRunMin)
     extRunMin := math.min(extRunMin, low)
 if not na(extRunMax)
     extRunMax := math.max(extRunMax, high)
 
-// BOS UP or CHoCH UP (close above last swing high)
+// ── Upward BOS or CHoCH ────────────────────────────────────────────────────
+// Fires when a confirmed bar closes ABOVE the last recorded swing high.
+// extHighBroken guard ensures this fires only once per swing high level.
 if barstate.isconfirmed and not na(extBosHigh) and not extHighBroken and close > extBosHigh
     extHighBroken := true
+    // If previous bias was bearish (-1), breaking up = CHoCH (trend reversal)
+    // If previous bias was bullish or neutral, breaking up = BOS (trend continuation)
     isCHoCH       = extBias == -1
     lineCol       = isCHoCH ? color.orange : color.green
+    // Draw a horizontal dotted line from the swing high bar to current bar
     line.new(x1=extBosHighBar, y1=extBosHigh, x2=bar_index, y2=extBosHigh,
              color=lineCol, width=2, style=line.style_dotted)
+    // Place label centered between the swing high bar and the break bar
     label.new(x=math.round((extBosHighBar + bar_index) / 2), y=extBosHigh,
               text=isCHoCH ? "CHoCH" : "BOS",
               style=label.style_label_center, color=lineCol,
               textcolor=color.white, size=size.small)
-    extBias := 1
-    // CHoCH level = lowest low between last HH and this BOS bar
+    extBias := 1  // bias is now bullish
+    // Draw CHoCH protection line at the lowest low between swing high and BOS bar.
+    // If price later closes below this yellow line, the bullish bias is at risk.
     if showChochLine
         if not na(extChochLine)
-            line.delete(extChochLine)
+            line.delete(extChochLine)  // remove old protection line first
         extChochLine := line.new(x1=extBosHighBar, y1=extRunMin, x2=bar_index, y2=extRunMin,
                                   color=color.yellow, width=1, style=line.style_dashed,
                                   extend=extend.right)
 
-// BOS DOWN or CHoCH DOWN (close below last swing low)
+// ── Downward BOS or CHoCH ──────────────────────────────────────────────────
+// Fires when a confirmed bar closes BELOW the last recorded swing low.
 if barstate.isconfirmed and not na(extBosLow) and not extLowBroken and close < extBosLow
     extLowBroken := true
+    // If previous bias was bullish (1), breaking down = CHoCH (trend reversal)
+    // If previous bias was bearish or neutral, breaking down = BOS (trend continuation)
     isCHoCH      = extBias == 1
     lineCol      = isCHoCH ? color.orange : color.red
     line.new(x1=extBosLowBar, y1=extBosLow, x2=bar_index, y2=extBosLow,
@@ -165,8 +221,9 @@ if barstate.isconfirmed and not na(extBosLow) and not extLowBroken and close < e
               text=isCHoCH ? "CHoCH" : "BOS",
               style=label.style_label_center, color=lineCol,
               textcolor=color.white, size=size.small)
-    extBias := -1
-    // CHoCH level = highest high between last LL and this BOS bar
+    extBias := -1  // bias is now bearish
+    // Protection line sits at the highest high between swing low and BOS bar.
+    // If price later closes above this yellow line, the bearish bias is at risk.
     if showChochLine
         if not na(extChochLine)
             line.delete(extChochLine)
@@ -175,6 +232,10 @@ if barstate.isconfirmed and not na(extBosLow) and not extLowBroken and close < e
                                   extend=extend.right)
 
 // ─── INTERNAL BOS / CHoCH ──────────────────────────────────────────────────
+// Same BOS/CHoCH logic as external but applied to the smaller internal swings.
+// Internal breaks happen more frequently and signal short-term momentum shifts.
+// No CHoCH protection line drawn for internal — only external gets that.
+
 var int   intBias       = 0
 var float intBosHigh    = na
 var int   intBosHighBar = na
@@ -227,5 +288,8 @@ if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < i
     intBias := -1
 
 // ─── BIAS BACKGROUND ───────────────────────────────────────────────────────
+// Colors the chart background based on external bias for quick visual context.
+// Green = bullish bias, Red = bearish bias, Gray = no bias established yet.
+// High transparency (90%) keeps it subtle so candles remain visible.
 biasColor = extBias == 1 ? color.new(color.green, 90) : extBias == -1 ? color.new(color.red, 90) : color.new(color.gray, 95)
 bgcolor(showBias ? biasColor : na, title="Bias Background")
