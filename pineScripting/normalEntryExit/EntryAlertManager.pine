@@ -1,0 +1,51 @@
+//@version=6
+indicator("Entry Alert Manager", overlay=true)
+
+// ─── INPUTS ────────────────────────────────────────────────────────────────
+areaLow  = input.float(title="Area Low",  defval=0.0, step=0.1)
+areaHigh = input.float(title="Area High", defval=0.0, step=0.1)
+
+// ─── CANDLE PATTERNS ───────────────────────────────────────────────────────
+body       = math.abs(close - open)
+low_shadow = math.min(open, close) - low
+up_shadow  = high - math.max(open, close)
+
+bull_engulf = close > open and close[1] < open[1] and open < close[1] and close > open[1]
+is_hammer   = low_shadow >= body * 2 and up_shadow <= body * 0.3
+
+// ─── ENTRY LOGIC ───────────────────────────────────────────────────────────
+// Candle is within or overlapping the entry zone
+inZone = high >= areaLow and low <= areaHigh
+
+// Signal candle: bullish pattern formed inside the zone
+signalCandle = inZone and (bull_engulf or is_hammer)
+
+// Store the high of the signal candle
+var float signalCandleHigh = na
+if signalCandle
+    signalCandleHigh := high
+
+// Entry: on the NEXT candle after signal, price crosses above the Shallsignal candle's high
+entry = signalCandle[1] and high > signalCandleHigh
+
+// ─── VISUALS ───────────────────────────────────────────────────────────────
+plot(areaHigh, title="Area High", color=color.blue, linewidth=2, style=plot.style_line)
+plot(areaLow,  title="Area Low",  color=color.blue, linewidth=1, style=plot.style_line)
+
+p1 = plot(areaHigh, display=display.none)
+p2 = plot(areaLow,  display=display.none)
+fill(p1, p2, color=color.new(color.blue, 85), title="Entry Area")
+
+// Yellow background when price is inside the zone (debug: confirms zone is detected)
+bgcolor(inZone ? color.new(color.yellow, 90) : na, title="In Zone")
+
+// Green background on the signal candle
+bgcolor(signalCandle ? color.new(color.green, 80) : na, title="Signal Ca    ndle")
+
+// Arrow on entry candle
+plotshape(entry, title="Entry", location=location.belowbar,
+          style=shape.triangleup, color=color.green, size=size.small)
+
+// ─── ALERT ─────────────────────────────────────────────────────────────────
+alertcondition(entry, title="Entry Signal",
+               message="Bullish pattern in zone — entry triggered above area high")

@@ -266,25 +266,27 @@ if not na(intRunMax)
 if barstate.isconfirmed and not na(intBosHigh) and not intHighBroken and close > intBosHigh
     intHighBroken := true
     isCHoCH       = intBias == -1
-    lineCol       = isCHoCH ? color.orange : color.green
-    line.new(x1=intBosHighBar, y1=intBosHigh, x2=bar_index, y2=intBosHigh,
-             color=lineCol, width=1, style=line.style_dotted)
-    label.new(x=math.round((intBosHighBar + bar_index) / 2), y=intBosHigh,
-              text=isCHoCH ? "choch" : "bos",
-              style=label.style_label_center, color=lineCol,
-              textcolor=color.white, size=size.tiny)
+    if showInternal
+        lineCol = isCHoCH ? color.orange : color.green
+        line.new(x1=intBosHighBar, y1=intBosHigh, x2=bar_index, y2=intBosHigh,
+                 color=lineCol, width=1, style=line.style_dotted)
+        label.new(x=math.round((intBosHighBar + bar_index) / 2), y=intBosHigh,
+                  text=isCHoCH ? "choch" : "bos",
+                  style=label.style_label_center, color=lineCol,
+                  textcolor=color.white, size=size.tiny)
     intBias := 1
 
 if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < intBosLow
     intLowBroken := true
     isCHoCH      = intBias == 1
-    lineCol      = isCHoCH ? color.orange : color.red
-    line.new(x1=intBosLowBar, y1=intBosLow, x2=bar_index, y2=intBosLow,
-             color=lineCol, width=1, style=line.style_dotted)
-    label.new(x=math.round((intBosLowBar + bar_index) / 2), y=intBosLow,
-              text=isCHoCH ? "choch" : "bos",
-              style=label.style_label_center, color=lineCol,
-              textcolor=color.white, size=size.tiny)
+    if showInternal
+        lineCol = isCHoCH ? color.orange : color.red
+        line.new(x1=intBosLowBar, y1=intBosLow, x2=bar_index, y2=intBosLow,
+                 color=lineCol, width=1, style=line.style_dotted)
+        label.new(x=math.round((intBosLowBar + bar_index) / 2), y=intBosLow,
+                  text=isCHoCH ? "choch" : "bos",
+                  style=label.style_label_center, color=lineCol,
+                  textcolor=color.white, size=size.tiny)
     intBias := -1
 
 // ─── BIAS BACKGROUND ───────────────────────────────────────────────────────

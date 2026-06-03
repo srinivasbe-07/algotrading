@@ -25,6 +25,15 @@ maxOBCount    = input.int(10, "Max Active OBs to Show", minval=1, maxval=50, gro
 bullOBColor   = input.color(color.new(color.green, 75), "Bullish OB Color", group="Order Blocks")
 bearOBColor   = input.color(color.new(color.red,   75), "Bearish OB Color", group="Order Blocks")
 
+// ─── MAX BARS BACK ─────────────────────────────────────────────────────────
+// Required because we access high/low/open/close with a dynamic runtime offset
+// (bar_index - extRunMinBar) when drawing OB boxes. Pine Script needs to know
+// how many bars of history to keep for these series.
+max_bars_back(high,  500)
+max_bars_back(low,   500)
+max_bars_back(open,  500)
+max_bars_back(close, 500)
+
 // ─── SWING DETECTION ───────────────────────────────────────────────────────
 // Pivot is confirmed extRight bars LATE — actual bar was at bar_index - extRight
 extSwingHigh = ta.pivothigh(high, extLeft, extRight)
@@ -207,7 +216,7 @@ if barstate.isconfirmed and not na(extBosHigh) and not extHighBroken and close >
     // Create Bullish OB at the candle with the lowest low before this BOS.
     // That candle swept sell-side liquidity (stop losses) before institutions pushed price up.
     // obOffset = how many bars ago that candle was from current bar.
-    if not na(extRunMinBar)
+    if not na(extRunMinBar) and extRunMinBar <= bar_index
         obOffset = bar_index - extRunMinBar
         obHi     = high[obOffset]  // full candle high (classic top)
         obLo     = low[obOffset]   // full candle low  (classic bottom) = extRunMin
@@ -283,7 +292,7 @@ if barstate.isconfirmed and not na(extBosLow) and not extLowBroken and close < e
 
     // Create Bearish OB at the candle with the highest high before this BOS.
     // That candle swept buy-side liquidity (stop losses) before institutions pushed price down.
-    if not na(extRunMaxBar)
+    if not na(extRunMaxBar) and extRunMaxBar <= bar_index
         obOffset = bar_index - extRunMaxBar
         obHi     = high[obOffset]
         obLo     = low[obOffset]
@@ -366,25 +375,27 @@ if not na(intRunMax)
 if barstate.isconfirmed and not na(intBosHigh) and not intHighBroken and close > intBosHigh
     intHighBroken := true
     isCHoCH       = intBias == -1
-    lineCol       = isCHoCH ? color.orange : color.green
-    line.new(x1=intBosHighBar, y1=intBosHigh, x2=bar_index, y2=intBosHigh,
-             color=lineCol, width=1, style=line.style_dotted)
-    label.new(x=math.round((intBosHighBar + bar_index) / 2), y=intBosHigh,
-              text=isCHoCH ? "choch" : "bos",
-              style=label.style_label_center, color=lineCol,
-              textcolor=color.white, size=size.tiny)
+    if showInternal
+        lineCol = isCHoCH ? color.orange : color.green
+        line.new(x1=intBosHighBar, y1=intBosHigh, x2=bar_index, y2=intBosHigh,
+                 color=lineCol, width=1, style=line.style_dotted)
+        label.new(x=math.round((intBosHighBar + bar_index) / 2), y=intBosHigh,
+                  text=isCHoCH ? "choch" : "bos",
+                  style=label.style_label_center, color=lineCol,
+                  textcolor=color.white, size=size.tiny)
     intBias := 1
 
 if barstate.isconfirmed and not na(intBosLow) and not intLowBroken and close < intBosLow
     intLowBroken := true
     isCHoCH      = intBias == 1
-    lineCol      = isCHoCH ? color.orange : color.red
-    line.new(x1=intBosLowBar, y1=intBosLow, x2=bar_index, y2=intBosLow,
-             color=lineCol, width=1, style=line.style_dotted)
-    label.new(x=math.round((intBosLowBar + bar_index) / 2), y=intBosLow,
-              text=isCHoCH ? "choch" : "bos",
-              style=label.style_label_center, color=lineCol,
-              textcolor=color.white, size=size.tiny)
+    if showInternal
+        lineCol = isCHoCH ? color.orange : color.red
+        line.new(x1=intBosLowBar, y1=intBosLow, x2=bar_index, y2=intBosLow,
+                 color=lineCol, width=1, style=line.style_dotted)
+        label.new(x=math.round((intBosLowBar + bar_index) / 2), y=intBosLow,
+                  text=isCHoCH ? "choch" : "bos",
+                  style=label.style_label_center, color=lineCol,
+                  textcolor=color.white, size=size.tiny)
     intBias := -1
 
 // ─── OB MITIGATION CHECK ──────────────────────────────────────────────────

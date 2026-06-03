@@ -29,19 +29,15 @@ shortExit = (ta.crossunder(close, targetPrice) or ta.crossover(close, stoplossPr
 if (longExit or shortExit)
     longC := 0
     shortC := 0
-    // Optionally reset the prices to prompt new inputs, if needed
-    // entryPrice := 0.0  // Resetting to zero might not be ideal for continuous trading
-    // stoplossPrice := 0.0
-    // targetPrice := 0.0
 
 // Long entry condition: when the close price crosses above entry price and no current position
 long = (longC == 0 and shortC == 0 and ta.crossover(close, entryPrice))
-if long 
+if long
     longC := 1  // Set long position active
 
 // Short entry condition: when the close price crosses below entry price and no current position
 short = (longC == 0 and shortC == 0 and ta.crossunder(close, entryPrice))
-if short 
+if short
     shortC := 1  // Set short position active
 
 // Plot horizontal lines for entry, target, and stop loss prices on the chart

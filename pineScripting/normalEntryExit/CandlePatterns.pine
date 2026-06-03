@@ -1,0 +1,35 @@
+//@version=5
+indicator("Pattern Colors Only", overlay=true)
+
+// Simple pattern detection
+body = math.abs(close - open)
+low_shadow = math.min(open, close) - low
+up_shadow = high - math.max(open, close)
+total_range = high - low
+
+bull_engulf = close > open and close[1] < open[1] and open < close[1] and close > open[1]
+bear_engulf = close < open and close[1] > open[1] and open > close[1] and close < open[1]
+is_hammer = low_shadow >= body * 2 and up_shadow <= body * 0.3
+is_shooting = up_shadow >= body * 2 and low_shadow <= body * 0.3 and close < open
+
+// Improved doji detection: small body in the middle of big wick
+is_doji = body <= total_range * 0.1 and
+          math.abs(close + open) / 2 >= low + total_range * 0.4 and
+          math.abs(close + open) / 2 <= high - total_range * 0.4
+
+// Color assignment - DOJI ADDED WITH HIGHEST PRIORITY
+color candleColor = na
+if is_doji
+    candleColor := color.white        // White for doji
+else if is_shooting
+    candleColor := color.yellow       // Yellow for shooting stars
+else if is_hammer
+    candleColor := color.purple       // Purple for hammers
+else if bull_engulf
+    candleColor := color.blue         // Blue for bullish engulfing
+else if bear_engulf
+    candleColor := color.orange       // Orange for bearish engulfing
+else
+    candleColor := close > open ? color.green : color.red
+
+barcolor(candleColor)
