@@ -10,7 +10,7 @@
 |-------|-------------------------------|-------------|---------------------------------|-------|
 | 1     | Swing Detection                | Done        | `phase1-swing-detection.pine`   | Verified on chart |
 | 2     | Market Structure (BOS & CHoCH) | Done        | `phase2-market-structure.pine`  | Verified on chart |
-| 3     | Order Blocks                   | Done        | `phase3-order-blocks.pine`      | Verified on chart |
+| 3     | Order Blocks                   | Not Started | `phase3-order-blocks.pine`      |       |
 | 4     | Fair Value Gaps                | Not Started | `phase4-fair-value-gaps.pine`   |       |
 | 5     | Equal Highs & Lows             | Not Started | `phase5-equal-highs-lows.pine`  |       |
 | 6     | Zones & MTF Levels             | Not Started | `phase6-zones-mtf-levels.pine`  |       |
