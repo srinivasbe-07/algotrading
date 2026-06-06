@@ -69,9 +69,11 @@ var trend swingTrend = trend.new(0)
 var array<orderBlock> orderBlocks = array.new<orderBlock>()
 
 // every bar's OHLC stored so storeOrderBlock can look back into any range
-var array<float> barHighs = array.new<float>()
-var array<float> barLows  = array.new<float>()
-var array<int>   barTimes = array.new<int>()
+var array<float> barOpens  = array.new<float>()
+var array<float> barHighs  = array.new<float>()
+var array<float> barLows   = array.new<float>()
+var array<float> barCloses = array.new<float>()
+var array<int>   barTimes  = array.new<int>()
 
 // ─────────────────────────────────────────────
 // PHASE 1 — Swing Detection
@@ -151,8 +153,9 @@ drawStructure(pivot p_ivot, string tag, color structureColor, string labelStyle)
 // ─────────────────────────────────────────────
 
 // At BOS/CHoCH moment:
-//   Bullish OB = candle with lowest LOW  between pivot bar and BOS bar
-//   Bearish OB = candle with highest HIGH between pivot bar and BOS bar
+//   Bullish OB = last RED candle (close < open) before bullish BOS — where sellers gave up
+//   Bearish OB = last GREEN candle (close > open) before bearish BOS — where buyers gave up
+//   Valid OB must leave an imbalance/FVG after it (OB-5, OB-6, OB-7 criteria)
 storeOrderBlock(pivot p_ivot, int bias) =>
     if showOBInput and not na(p_ivot.barIndex)
         int startIdx = p_ivot.barIndex
@@ -162,25 +165,48 @@ storeOrderBlock(pivot p_ivot, int bias) =>
             float obHigh = na
             float obLow  = na
             int   obTime = na
+            int   obIdx  = na
 
             if bias == BULLISH
-                float minLow = na
-                for i = startIdx to endIdx - 1
-                    l = barLows.get(i)
-                    if na(minLow) or l < minLow
-                        minLow := l
+                // scan backwards — find last RED candle (close < open)
+                for i = endIdx - 1 to startIdx
+                    if barCloses.get(i) < barOpens.get(i)
+                        obIdx  := i
                         obHigh := barHighs.get(i)
-                        obLow  := l
+                        obLow  := barLows.get(i)
                         obTime := barTimes.get(i)
+                        break
+                // fallback: no red candle found → use lowest low
+                if na(obIdx)
+                    float minLow = na
+                    for i = startIdx to endIdx - 1
+                        l = barLows.get(i)
+                        if na(minLow) or l < minLow
+                            minLow := l
+                            obIdx  := i
+                            obHigh := barHighs.get(i)
+                            obLow  := l
+                            obTime := barTimes.get(i)
             else
-                float maxHigh = na
-                for i = startIdx to endIdx - 1
-                    h = barHighs.get(i)
-                    if na(maxHigh) or h > maxHigh
-                        maxHigh := h
-                        obHigh  := h
-                        obLow   := barLows.get(i)
-                        obTime  := barTimes.get(i)
+                // scan backwards — find last GREEN candle (close > open)
+                for i = endIdx - 1 to startIdx
+                    if barCloses.get(i) > barOpens.get(i)
+                        obIdx  := i
+                        obHigh := barHighs.get(i)
+                        obLow  := barLows.get(i)
+                        obTime := barTimes.get(i)
+                        break
+                // fallback: no green candle found → use highest high
+                if na(obIdx)
+                    float maxHigh = na
+                    for i = startIdx to endIdx - 1
+                        h = barHighs.get(i)
+                        if na(maxHigh) or h > maxHigh
+                            maxHigh := h
+                            obIdx   := i
+                            obHigh  := h
+                            obLow   := barLows.get(i)
+                            obTime  := barTimes.get(i)
 
             if not na(obTime)
                 obColor = bias == BULLISH ? obBullColorInput : obBearColorInput
@@ -237,12 +263,12 @@ deleteOrderBlocks() =>
                 ob.mitigated := true
                 if showMitigatedOBInput
                     // stop extending, shrink to mitigated bar
-                    // no fill + visible border = clearly different from active (filled) OB
+                    // no fill + solid border = clearly different from active (filled) OB
                     ob.boxRef.set_extend(extend.none)
                     ob.boxRef.set_right(time)
                     ob.boxRef.set_bgcolor(color(na))
-                    ob.boxRef.set_border_color(ob.bias == BULLISH ? obBullColorInput : obBearColorInput)
-                    ob.boxRef.set_border_width(1)
+                    ob.boxRef.set_border_color(ob.bias == BULLISH ? GREEN : RED)
+                    ob.boxRef.set_border_width(2)
                 else
                     ob.boxRef.delete()
                     orderBlocks.remove(i)
@@ -272,8 +298,10 @@ displayStructure() =>
 // ─────────────────────────────────────────────
 
 // push current bar data FIRST so storeOrderBlock can read it during BOS detection
+barOpens.push(open)
 barHighs.push(high)
 barLows.push(low)
+barCloses.push(close)
 barTimes.push(time)
 
 getCurrentStructure(swingsLengthInput)
