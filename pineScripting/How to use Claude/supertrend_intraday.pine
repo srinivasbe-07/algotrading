@@ -1,0 +1,62 @@
+//@version=6
+// Supertrend intraday strategy for Nifty / BankNifty (NSE F&O, both sides allowed).
+// Defaults: ATR len 10, multiplier 3, 5m chart. Entry on Supertrend flip, optional EMA-trend filter.
+// SL/target in points; force square-off 15:15 IST; no new entries after 15:00 IST.
+
+strategy("Supertrend Intraday (Nifty/BankNifty)", overlay=true,
+     initial_capital=100000,
+     default_qty_type=strategy.fixed,
+     default_qty_value=1,
+     commission_type=strategy.commission.percent,
+     commission_value=0.03,
+     process_orders_on_close=true,
+     calc_on_every_tick=false)
+
+// === Inputs ===
+atrLen     = input.int(10,   "Supertrend ATR length", minval=1)
+atrMult    = input.float(3.0,"Supertrend multiplier", minval=0.5, step=0.5)
+lotSize    = input.int(25,   "Lot size (qty)", minval=1)
+slPoints   = input.float(40, "SL points",     minval=0.05, step=0.05)
+tgtPoints  = input.float(80, "Target points", minval=0.05, step=0.05)
+useEmaFilt = input.bool(true,"Use EMA trend filter")
+emaLen     = input.int(50,   "EMA length", minval=1)
+sessEntry  = input.session("0915-1500", "Entry session (IST)")
+sessHold   = input.session("0915-1515", "Hold-until session (IST)")
+
+// === Session filters (NSE timezone) ===
+inEntryWindow = not na(time(timeframe.period, sessEntry + ":23456", "Asia/Kolkata"))
+inHoldWindow  = not na(time(timeframe.period, sessHold  + ":23456", "Asia/Kolkata"))
+
+// === Supertrend ===
+[supertrend, dir] = ta.supertrend(atrMult, atrLen)
+// dir == -1 -> uptrend (price above), dir == 1 -> downtrend
+flipUp   = dir == -1 and dir[1] ==  1   // bearish -> bullish flip
+flipDown = dir ==  1 and dir[1] == -1   // bullish -> bearish flip
+
+// === Trend filter ===
+ema = ta.ema(close, emaLen)
+longOk  = not useEmaFilt or close > ema
+shortOk = not useEmaFilt or close < ema
+
+// === Entry logic ===
+longCondition  = flipUp   and longOk
+shortCondition = flipDown and shortOk
+
+if inEntryWindow and longCondition
+    strategy.entry("Long",  strategy.long,  qty=lotSize)
+if inEntryWindow and shortCondition
+    strategy.entry("Short", strategy.short, qty=lotSize)
+
+// === SL / Target (points -> ticks via mintick) ===
+strategy.exit("X-Long",  from_entry="Long",
+     loss=slPoints / syminfo.mintick, profit=tgtPoints / syminfo.mintick)
+strategy.exit("X-Short", from_entry="Short",
+     loss=slPoints / syminfo.mintick, profit=tgtPoints / syminfo.mintick)
+
+// === Force square-off at session end ===
+if not inHoldWindow and strategy.position_size != 0
+    strategy.close_all(comment="Square-off")
+
+// === Plots ===
+plot(supertrend, "Supertrend", color = dir == -1 ? color.green : color.red, linewidth=2)
+plot(useEmaFilt ? ema : na, "EMA", color=color.orange)
