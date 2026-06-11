@@ -75,7 +75,7 @@ if crossoverSignal
     pendingEntry      := true
     pendingEntryLevel := isBigCandle ? low + bigCandleThreshold : math.round((high + low) / 2, 2)
     label.new(bar_index, pendingEntryLevel, "Wait @ " + str.tostring(math.round(pendingEntryLevel, 2)),
-              color=color.orange, textcolor=color.white, style=label.style_label_up, size=size.small)
+              color=color.orange, textcolor=color.orange, style=label.style_none, size=size.small)
 
 // Pending fill fires on bar close when price touched the entry level
 pendingFill = pendingEntry and not crossoverSignal and barstate.isconfirmed and low <= pendingEntryLevel
