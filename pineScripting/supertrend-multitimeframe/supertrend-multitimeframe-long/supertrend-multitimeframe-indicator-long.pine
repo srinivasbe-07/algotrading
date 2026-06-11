@@ -64,8 +64,9 @@ crossoverSignal = longC == 0 and ((crossL and close > h_supertrend) or (crossH a
 // On every crossover: set pending and lock entry level from crossover bar
 if crossoverSignal
     halfCandle        = (high - low) / 2
+    rawLevel          = halfCandle > bigCandleThreshold ? low + bigCandleThreshold : low + halfCandle
     pendingEntry      := true
-    pendingEntryLevel := halfCandle > bigCandleThreshold ? low + bigCandleThreshold : low + halfCandle
+    pendingEntryLevel := math.max(rawLevel, close - bigCandleThreshold)
     label.new(bar_index, pendingEntryLevel, "Wait @ " + str.tostring(math.round(pendingEntryLevel, 2)),
               color=color.orange, textcolor=color.white, style=label.style_label_up, size=size.small)
 
