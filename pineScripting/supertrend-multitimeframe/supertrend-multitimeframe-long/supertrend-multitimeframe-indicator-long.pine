@@ -67,14 +67,14 @@ isBigCandle = (high - low) > bigCandleThreshold
 if crossoverSignal
     pendingEntry      := true
     pendingEntryLevel := isBigCandle ? low + bigCandleThreshold : math.round((high + low) / 2, 2)
-    label.new(bar_index, pendingEntryLevel, "Wait @ " + str.tostring(math.round(pendingEntryLevel, 2)),
-              color=color.orange, textcolor=color.orange, style=label.style_none, size=size.small)
 
 // Pending fill fires on bar close when price touched the entry level
 pendingFill = pendingEntry and not crossoverSignal and barstate.isconfirmed and low <= pendingEntryLevel
 longEntry   = pendingFill
 
 if longEntry
+    label.new(bar_index, high, "Long @ " + str.tostring(math.round(pendingEntryLevel, 2)),
+              color=color.green, textcolor=color.white, style=label.style_label_down, size=size.small)
     longC             := 1
     pendingEntry      := false
     pendingEntryLevel := na
@@ -87,5 +87,4 @@ alertcondition(longExit,  "Long Close Alert", "supertrend: CLOSE LONG")
 plot(pendingEntry ? pendingEntryLevel : na, "Pending Entry Level", color=color.orange, style=plot.style_linebr, linewidth=2)
 
 // Plot signals
-plotshape(longEntry, title="Long Entry", style=shape.arrowup,   location=location.abovebar, color=color.green, text="Long")
-plotshape(longExit,  title="Long Exit",  style=shape.arrowdown, location=location.belowbar, color=color.red,   text="Exit Long")
+plotshape(longExit, title="Long Exit", style=shape.arrowdown, location=location.belowbar, color=color.red, text="Exit Long")
