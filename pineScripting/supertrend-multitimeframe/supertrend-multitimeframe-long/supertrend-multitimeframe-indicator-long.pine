@@ -34,7 +34,8 @@ var int   longC             = 0
 var bool  pendingEntry      = false
 var float pendingEntryLevel = na
 
-bigCandleThreshold = syminfo.ticker == 'SENSEX' ? 35.0 : 15.0
+isSensex           = str.contains(syminfo.ticker, 'BSX') or str.contains(syminfo.ticker, 'SENSEX')
+bigCandleThreshold = isSensex ? 35.0 : 15.0
 
 // Reset all state at the start of each new trading day
 if ta.change(time("D")) != 0

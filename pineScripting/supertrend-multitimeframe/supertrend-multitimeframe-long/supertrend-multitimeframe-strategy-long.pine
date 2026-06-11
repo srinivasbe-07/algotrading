@@ -32,16 +32,13 @@ fill(h_bodyMiddle, h_downTrend, title = "Downtrend background", color = color.ne
 
 symbol   = syminfo.ticker
 
-quantity = switch symbol
-    'BTCUSD.P'  => 7
-    'SOLUSD.P'  => 5
-    'ETHUSD.P'  => 27
-    'NIFTY'     => 1
-    'BANKNIFTY' => 1
-    'SENSEX'    => 1
-    => 0
+isNifty     = str.contains(symbol, 'NIFTY') and not str.contains(symbol, 'BANKNIFTY')
+isBankNifty = str.contains(symbol, 'BANKNIFTY')
+isSensex    = str.contains(symbol, 'BSX') or str.contains(symbol, 'SENSEX')
 
-bigCandleThreshold = symbol == 'SENSEX' ? 35.0 : 15.0
+quantity = isSensex or isNifty or isBankNifty ? 1 : symbol == 'BTCUSD.P' ? 7 : symbol == 'SOLUSD.P' ? 5 : symbol == 'ETHUSD.P' ? 27 : 0
+
+bigCandleThreshold = isSensex ? 35.0 : 15.0
 
 var int   longC             = 0
 var bool  pendingEntry      = false
@@ -54,11 +51,11 @@ if longExit
     longC             := 0
     pendingEntry      := false
     pendingEntryLevel := na
-    if symbol == 'NIFTY'
+    if isNifty
         strategy.close("Long", comment='exit', alert_message='684b964eabc928d036545e4c')
-    else if symbol == 'SENSEX'
+    else if isSensex
         strategy.close("Long", comment='exit', alert_message='684be6b7abc928d03654601b')
-    else if symbol == 'BANKNIFTY'
+    else if isBankNifty
         strategy.close("Long", comment='exit', alert_message='684beb16290d47dc0a8733bb')
     else
         strategy.close("Long")
@@ -88,11 +85,11 @@ if longEntry
     longC             := 1
     pendingEntry      := false
     pendingEntryLevel := na
-    if symbol == 'NIFTY'
+    if isNifty
         strategy.entry("Long", strategy.long, qty=quantity, comment='entry', alert_message='684b964eabc928d036545e4c')
-    else if symbol == 'SENSEX'
+    else if isSensex
         strategy.entry("Long", strategy.long, qty=quantity, comment='entry', alert_message='684be6b7abc928d03654601b')
-    else if symbol == 'BANKNIFTY'
+    else if isBankNifty
         strategy.entry("Long", strategy.long, qty=quantity, comment='entry', alert_message='684beb16290d47dc0a8733bb')
     else
         strategy.entry("Long", strategy.long, qty=quantity)
