@@ -70,17 +70,16 @@ crossoverSignal = longC == 0 and ((ta.crossover(close, l_supertrend) and close >
 
 isBigCandle = (high - low) > bigCandleThreshold
 
-// Big candle: wait for pullback to low + threshold; normal candle: enter immediately
+// Big candle: wait for low + threshold; normal candle: wait for midpoint
 if crossoverSignal
-    if isBigCandle
-        pendingEntry      := true
-        pendingEntryLevel := low + bigCandleThreshold
-        label.new(bar_index, pendingEntryLevel, "Wait @ " + str.tostring(math.round(pendingEntryLevel, 2)),
-                  color=color.orange, textcolor=color.white, style=label.style_label_up, size=size.small)
+    pendingEntry      := true
+    pendingEntryLevel := isBigCandle ? low + bigCandleThreshold : math.round((high + low) / 2, 2)
+    label.new(bar_index, pendingEntryLevel, "Wait @ " + str.tostring(math.round(pendingEntryLevel, 2)),
+              color=color.orange, textcolor=color.white, style=label.style_label_up, size=size.small)
 
 // Pending fill fires on bar close when price touched the entry level
 pendingFill = pendingEntry and not crossoverSignal and barstate.isconfirmed and low <= pendingEntryLevel
-longEntry   = (crossoverSignal and not isBigCandle) or pendingFill
+longEntry   = pendingFill
 
 if longEntry
     longC             := 1
