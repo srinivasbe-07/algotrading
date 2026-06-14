@@ -1,0 +1,160 @@
+//@version=6
+indicator("SMC Part 1 - Swing H/L", overlay=true)
+
+isInside  = high < high[1] and low > low[1]
+isBullish = not isInside and close > open
+isBearish = not isInside and close < open
+
+pivotLow  = ta.pivotlow(low,  1, 1)
+pivotHigh = ta.pivothigh(high, 1, 1)
+
+// Pending Low state
+var float   pendingLow      = na
+var int     pendingLowBar   = -1
+var int     bullAfterLow    = 0
+var float   maxHighSinceLow = na
+var label[] bullCountLabels = array.new<label>()
+
+// Pending High state
+var float   pendingHigh     = na
+var int     pendingHighBar  = -1
+var int     bearAfterHigh   = 0
+var float   minLowSinceHigh = na
+var label[] bearCountLabels = array.new<label>()
+
+// Confirmed swing history (index 0 = most recent)
+var int     maxSwings        = 5
+var float[] swingHighPrices  = array.new<float>()
+var int[]   swingHighBars    = array.new<int>()
+var float[] swingLowPrices   = array.new<float>()
+var int[]   swingLowBars     = array.new<int>()
+
+// Invalidate pending low if price closes below it
+if not na(pendingLow) and close < pendingLow
+    for lbl in bullCountLabels
+        label.delete(lbl)
+    array.clear(bullCountLabels)
+    pendingLow      := na
+    pendingLowBar   := -1
+    bullAfterLow    := 0
+    maxHighSinceLow := na
+
+// Invalidate pending high if price closes above it
+if not na(pendingHigh) and close > pendingHigh
+    for lbl in bearCountLabels
+        label.delete(lbl)
+    array.clear(bearCountLabels)
+    pendingHigh     := na
+    pendingHighBar  := -1
+    bearAfterHigh   := 0
+    minLowSinceHigh := na
+
+// New pivot low — accept if no pending, OR if new pivot is LOWER (replace old pending)
+if not na(pivotLow) and (na(pendingLow) or pivotLow < pendingLow)
+    if not na(pendingLow)
+        for lbl in bullCountLabels
+            label.delete(lbl)
+        array.clear(bullCountLabels)
+
+    pendingLow      := pivotLow
+    pendingLowBar   := bar_index[1]
+    maxHighSinceLow := high[1]
+    bullAfterLow    := 0
+
+    if close[1] > open[1]
+        bullAfterLow := 1
+        array.push(bullCountLabels,
+             label.new(bar_index[1], low[1], "1",
+                       color     = color.new(color.white, 100),
+                       textcolor = color.green,
+                       size      = size.small,
+                       style     = label.style_none,
+                       yloc      = yloc.belowbar))
+
+// New pivot high — accept if no pending, OR if new pivot is HIGHER (replace old pending)
+if not na(pivotHigh) and (na(pendingHigh) or pivotHigh > pendingHigh)
+    if not na(pendingHigh)
+        for lbl in bearCountLabels
+            label.delete(lbl)
+        array.clear(bearCountLabels)
+
+    pendingHigh     := pivotHigh
+    pendingHighBar  := bar_index[1]
+    minLowSinceHigh := low[1]
+    bearAfterHigh   := 0
+
+    if close[1] < open[1]
+        bearAfterHigh := 1
+        array.push(bearCountLabels,
+             label.new(bar_index[1], high[1], "1",
+                       color     = color.new(color.white, 100),
+                       textcolor = color.red,
+                       size      = size.small,
+                       style     = label.style_none,
+                       yloc      = yloc.abovebar))
+
+// Count bullish candles after pending low
+if not na(pendingLow)
+    if isBullish and close > maxHighSinceLow
+        bullAfterLow    += 1
+        maxHighSinceLow := high
+        array.push(bullCountLabels,
+             label.new(bar_index, low, str.tostring(bullAfterLow),
+                       color     = color.new(color.white, 100),
+                       textcolor = color.green,
+                       size      = size.small,
+                       style     = label.style_none,
+                       yloc      = yloc.belowbar))
+        if bullAfterLow >= 3
+            label.new(pendingLowBar, pendingLow, "L",
+                      color     = color.new(color.white, 100),
+                      textcolor = color.red,
+                      size      = size.normal,
+                      style     = label.style_none,
+                      yloc      = yloc.belowbar)
+            // Store confirmed swing low
+            array.unshift(swingLowPrices, pendingLow)
+            array.unshift(swingLowBars,   pendingLowBar)
+            if array.size(swingLowPrices) > maxSwings
+                array.pop(swingLowPrices)
+                array.pop(swingLowBars)
+            array.clear(bullCountLabels)
+            pendingLow      := na
+            pendingLowBar   := -1
+            bullAfterLow    := 0
+            maxHighSinceLow := na
+    else
+        maxHighSinceLow := math.max(maxHighSinceLow, high)
+
+// Count bearish candles after pending high
+if not na(pendingHigh)
+    if isBearish and close < minLowSinceHigh
+        bearAfterHigh   += 1
+        minLowSinceHigh := low
+        array.push(bearCountLabels,
+             label.new(bar_index, high, str.tostring(bearAfterHigh),
+                       color     = color.new(color.white, 100),
+                       textcolor = color.red,
+                       size      = size.small,
+                       style     = label.style_none,
+                       yloc      = yloc.abovebar))
+        if bearAfterHigh >= 3
+            label.new(pendingHighBar, pendingHigh, "H",
+                      color     = color.new(color.white, 100),
+                      textcolor = color.green,
+                      size      = size.normal,
+                      style     = label.style_none,
+                      yloc      = yloc.abovebar)
+            // Store confirmed swing high
+            array.unshift(swingHighPrices, pendingHigh)
+            array.unshift(swingHighBars,   pendingHighBar)
+            if array.size(swingHighPrices) > maxSwings
+                array.pop(swingHighPrices)
+                array.pop(swingHighBars)
+            array.clear(bearCountLabels)
+            pendingHigh     := na
+            pendingHighBar  := -1
+            bearAfterHigh   := 0
+            minLowSinceHigh := na
+    else
+        minLowSinceHigh := math.min(minLowSinceHigh, low)
