@@ -10,7 +10,7 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | Part | Topic                        | Status      | File |
 |------|------------------------------|-------------|------|
-| 1    | Swing Highs & Lows           | Not Started | —    |
+| 1    | Swing Highs & Lows           | Done        | `smc/part1-swing-highs-lows/smc-part1-swings.pine` |
 | 2    | Market Structure (BOS/CHoCH) | Not Started | —    |
 | 3    | Fair Value Gaps (FVG)        | Not Started | —    |
 | 4    | Order Blocks (OB)            | Not Started | —    |
@@ -22,7 +22,7 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 ## Part 1 — Swing Highs & Lows
 
-**Goal:** Detect swing highs and lows using a configurable lookback length. Foundation for all other parts.
+**Goal:** Detect confirmed swing highs and lows using the Golden Rule (3-candle confirmation). Foundation for all other parts.
 
 **Sub-parts:**
 
@@ -33,10 +33,15 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 | 1.3 | Plot swing high/low labels on chart       | Done        |
 | 1.4 | Store recent N swing highs/lows in arrays | Done        |
 
-**Notes:**
-- Swing length input (default: 5) — bars to the left and right
-- Use `ta.pivothigh()` / `ta.pivotlow()` built-ins or manual rolling max/min
-- Confirmed swings only (bar must have closed with N bars to the right confirmed)
+**Key concepts implemented:**
+- `ta.pivotlow(low, 1, 1)` / `ta.pivothigh(high, 1, 1)` — middle of 3 candles is the extreme. Fires 1 bar late (at bar[0] for pivot at bar[1])
+- **Golden Rule:** pivot is only confirmed after 3 candles in the opposite direction each close beyond the previous counted candle's high/low
+- **Inside candles:** `high < high[1] and low > low[1]` — skipped entirely (not counted, do not reset count)
+- **Pivot candle as candle 1:** if the pivot candle itself is bullish (for low) or bearish (for high), it counts as candle 1
+- **Lock:** once a pendingLow/pendingHigh is set, new pivots at same level or less extreme are ignored
+- **Replace:** if a new more extreme pivot forms before confirmation (higher high / lower low), it replaces the pending pivot and resets the count. Old counting labels are deleted from chart.
+- **Invalidation:** if price closes below pendingLow or above pendingHigh, the pending state is cleared entirely
+- **Arrays:** last 5 confirmed swing highs and lows stored in `swingHighPrices[]`, `swingHighBars[]`, `swingLowPrices[]`, `swingLowBars[]` (index 0 = most recent) for use in Part 2
 
 **File:** `smc/part1-swing-highs-lows/smc-part1-swings.pine`
 
@@ -186,3 +191,4 @@ Once all parts are tested individually, merge into a single indicator script.
 |------------|------|--------|
 | 2026-06-14 | —    | Document created, roadmap defined |
 | 2026-06-14 | 1.1–1.3 | Swing H/L detection complete — 3-candle Golden Rule, lock + invalidation, label cleanup on pivot replacement |
+| 2026-06-14 | 1.4     | Confirmed swing H/L stored in arrays (last 5, index 0 = most recent) for Part 2 consumption |
