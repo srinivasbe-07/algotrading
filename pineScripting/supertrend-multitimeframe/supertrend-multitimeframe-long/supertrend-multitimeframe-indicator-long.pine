@@ -34,6 +34,9 @@ var int   longC             = 0
 var bool  pendingEntry      = false
 var float pendingEntryLevel = na
 
+isSensex           = str.contains(syminfo.ticker, 'BSX') or str.contains(syminfo.ticker, 'SENSEX')
+bigCandleThreshold = isSensex ? 35.0 : 15.0
+
 // Reset all state at the start of each new trading day
 if ta.change(time("D")) != 0
     longC             := 0
@@ -55,19 +58,24 @@ if pendingEntry and (close < l_supertrend or close < h_supertrend)
     pendingEntry      := false
     pendingEntryLevel := na
 
-// Crossover signal: set pending entry at midpoint of crossover candle
+// Crossover signal: big candle waits for low + threshold; normal candle waits for midpoint
 crossoverSignal = longC == 0 and ((crossL and close > h_supertrend) or (crossH and close > l_supertrend)) and barstate.isconfirmed
 
+isBigCandle = (high - low) > bigCandleThreshold
+
 if crossoverSignal
-    pendingEntry      := true
-    pendingEntryLevel := (high + low) / 2
+    if isBigCandle
+        pendingEntry      := true
+        pendingEntryLevel := (high + low) / 2
+    // normal candle: enter immediately via longEntry below
 
 // Pending fill fires on bar close when price touched the midpoint
 pendingFill = pendingEntry and not crossoverSignal and barstate.isconfirmed and low <= pendingEntryLevel
-longEntry   = pendingFill
+longEntry   = (crossoverSignal and not isBigCandle) or pendingFill
 
 if longEntry
-    label.new(bar_index, high, "Long @ " + str.tostring(math.round(pendingEntryLevel, 2)),
+    entryPrice = na(pendingEntryLevel) ? close : pendingEntryLevel
+    label.new(bar_index, high, "Long @ " + str.tostring(math.round(entryPrice, 2)),
               color=color.green, textcolor=color.white, style=label.style_label_down, size=size.small)
     longC             := 1
     pendingEntry      := false
