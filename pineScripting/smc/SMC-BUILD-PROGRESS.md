@@ -11,7 +11,7 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 | Part | Topic                        | Status      | File |
 |------|------------------------------|-------------|------|
 | 1    | Swing Highs & Lows           | Done        | `smc/part1-swing-highs-lows/smc-part1-swings.pine` |
-| 2    | Market Structure (BOS/CHoCH) | Not Started | —    |
+| 2    | Market Structure (BOS/CHoCH) | Done        | `smc/part2-market-structure/smc-part2-market-structure.pine` |
 | 3    | Fair Value Gaps (FVG)        | Not Started | —    |
 | 4    | Order Blocks (OB)            | Not Started | —    |
 | 5    | Liquidity Levels             | Not Started | —    |
@@ -56,17 +56,35 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
 | 2.1 | Track last swing high and last swing low        | Done (via Part 1 arrays) |
-| 2.2 | Detect BOS (Break of Structure) — trend continuation | Not Started |
-| 2.3 | Detect CHoCH (Change of Character) — reversal   | Not Started |
-| 2.4 | Maintain current trend state (bullish/bearish)  | Not Started |
-| 2.5 | Draw BOS/CHoCH lines and labels on chart        | Not Started |
+| 2.2 | Detect BOS (Break of Structure) — trend continuation | Done (chart verified) |
+| 2.3 | Detect CHoCH (Change of Character) — reversal   | Done (chart verified) |
+| 2.4 | Maintain current trend state (bullish/bearish)  | Done (chart verified) |
+| 2.5 | Draw BOS/CHoCH lines and labels on chart        | Done (chart verified) |
+
+**Agreed approach (ready to code):**
+
+1. **Initialize from history** — Part 1 populates swing arrays from all historical bars. Pick `swingHighPrices[0]` and `swingLowPrices[0]` as starting refHigh and refLow. Trend = "up" if H bar more recent, "down" if L bar more recent.
+
+2. **Draw lines from confirmed H/L** — when Part 1 confirms a new H, draw horizontal line extending right. Same for L. These are the BOS/CHoCH detection levels.
+
+3. **BOS/CHoCH detection** — `close > refHigh` triggers BOS (if trend up) or CHoCH (if trend down). `close < refLow` triggers BOS (if trend down) or CHoCH (if trend up). Line ends at event bar, label placed there.
+
+4. **After BOS/CHoCH — new levels:**
+   - One side is **immediate**: scan lowest/highest point from confirmed H/L bar to event bar (range lookup)
+   - Other side **waits**: next Golden Rule confirmed H or L from Part 1
+   - Once BOTH are set → completely frozen until next BOS/CHoCH. No updates.
+
+5. **Key rule**: new High and Low determined after BOS/CHoCH do NOT change until the next BOS or CHoCH fires on those levels.
 
 **Notes:**
-- BOS: price closes beyond a swing point *in the direction of current trend*
-- CHoCH: price closes beyond a swing point *against the current trend*
-- Depends on Part 1
+- BOS: price closes beyond a swing point in the direction of current trend (continuation)
+- CHoCH: price closes beyond a swing point against current trend (reversal)
+- After CHoCH: if price breaks that level again → it is CHoCH again (not BOS)
+- New Low after bullish BOS = lowest candle between confirmed H bar and BOS bar
+- New High after bearish BOS = highest candle between confirmed L bar and BOS bar
+- Depends on Part 1 arrays (swingHighPrices, swingHighBars, swingLowPrices, swingLowBars)
 
-**File:** `smc/part2-market-structure/smc-part2-market-structure.pine` *(pending)*
+**File:** `smc/part2-market-structure/smc-part2-market-structure.pine`
 
 ---
 
@@ -192,3 +210,7 @@ Once all parts are tested individually, merge into a single indicator script.
 | 2026-06-14 | —    | Document created, roadmap defined |
 | 2026-06-14 | 1.1–1.3 | Swing H/L detection complete — 3-candle Golden Rule, lock + invalidation, label cleanup on pivot replacement |
 | 2026-06-14 | 1.4     | Confirmed swing H/L stored in arrays (last 5, index 0 = most recent) for Part 2 consumption |
+| 2026-06-15 | 2.2–2.5 | Market Structure implemented: init-from-history trend, BOS/CHoCH detection, immediate side via range scan (lowest/highest from ref bar → event bar), waiting side via next confirmed swing, ref-level lines that end at event bar. Pending chart test on Nifty/Sensex. |
+| 2026-06-15 | 2.5     | Display polish: BOS/CHoCH + H/L as plain text (no boxes), BOS/CHoCH centered on broken line, dotted lines width=2, raw swing labels toggle (default off), structure H/L toggle (default on). |
+| 2026-06-15 | 2.x bug | Fixed: superseded structure H/L were deleted on each new event, so only the latest survived (older BOS showed no H). Now old levels are frozen + kept as history instead of deleted. |
+| 2026-06-15 | 2.5     | Final display model (chart-verified): only TWO line types — BOS (blue) and CHoCH (green up / red down). Lines drawn only at a break, origin bar → break bar (no extending reference lines). H/L plain text markers at structure levels. Trend background (green up / red down, transp 92). Part 2 DONE. |
