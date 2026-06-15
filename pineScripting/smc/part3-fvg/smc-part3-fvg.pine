@@ -1,0 +1,81 @@
+//@version=6
+indicator("SMC Part 3 - Fair Value Gaps", overlay=true)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 3 — Fair Value Gaps (FVG)
+//
+//  3-candle imbalance. Using [2]=oldest, [1]=middle, [0]=current:
+//   Bullish FVG: high[2] < low[0]  AND  close[1] > high[2]
+//   Bearish FVG: low[2]  > high[0] AND  close[1] < low[2]
+//  The close[1] check (middle-candle confirmation) ensures the
+//  displacement candle actually closed through the gap.
+//  Standalone — does not depend on swings or market structure.
+//  OB-based filtering will be added in Part 4 (Order Blocks).
+// ══════════════════════════════════════════════════════════════════
+
+// ── Inputs ────────────────────────────────────────────────────────
+showBull   = input.bool(true,  "Show bullish FVG")
+showBear   = input.bool(true,  "Show bearish FVG")
+colBull    = input.color(color.new(color.green, 80), "Bullish FVG")
+colBear    = input.color(color.new(color.red,   80), "Bearish FVG")
+colMit     = input.color(color.new(color.gray,  85), "Mitigated FVG")
+maxBoxes   = input.int(20, "Max FVG boxes", minval = 1)
+extendBars = input.int(10, "Box extend (bars)", minval = 0)
+hideMitig  = input.bool(false, "Hide mitigated FVGs")
+useThresh  = input.bool(false, "Filter by displacement strength")
+
+// ── Type: one tracked FVG ─────────────────────────────────────────
+type fvg
+    float top
+    float bottom
+    int   bias          // 1 = bullish, -1 = bearish
+    box   bx
+    bool  mitigated = false
+
+var fvg[] fvgs = array.new<fvg>()
+
+// Cap the number of FVGs on the chart (delete the oldest)
+trim() =>
+    while array.size(fvgs) > maxBoxes
+        old = array.shift(fvgs)
+        box.delete(old.bx)
+
+// ── Significance threshold (#3) — middle-candle body % vs auto avg ─
+deltaPct  = (close[1] - open[1]) / open[1]
+threshold = useThresh ? ta.cum(math.abs(deltaPct)) / bar_index * 2 : 0.0
+
+// ── Detection ─────────────────────────────────────────────────────
+bullFVG = high[2] < low[0] and close[1] > high[2] and (not useThresh or  deltaPct > threshold)
+bearFVG = low[2]  > high[0] and close[1] < low[2]  and (not useThresh or -deltaPct > threshold)
+
+// ── Create new FVG ────────────────────────────────────────────────
+if bullFVG and showBull
+    b = box.new(bar_index[2], low[0], bar_index + extendBars, high[2],
+                border_color = color.new(color.green, 40), border_width = 1, bgcolor = colBull)
+    array.push(fvgs, fvg.new(low[0], high[2], 1, b))
+    trim()
+
+if bearFVG and showBear
+    b = box.new(bar_index[2], low[2], bar_index + extendBars, high[0],
+                border_color = color.new(color.red, 40), border_width = 1, bgcolor = colBear)
+    array.push(fvgs, fvg.new(low[2], high[0], -1, b))
+    trim()
+
+// ── Mitigation (#2) — first touch back into the gap ───────────────
+//   Bullish: price dips below the top of the gap (low < top)
+//   Bearish: price rises above the bottom of the gap (high > bottom)
+if array.size(fvgs) > 0
+    for i = array.size(fvgs) - 1 to 0
+        f = array.get(fvgs, i)
+        if not f.mitigated
+            box.set_right(f.bx, bar_index + extendBars)          // keep extending while active
+            touched = f.bias == 1 ? low < f.top : high > f.bottom
+            if touched
+                f.mitigated := true
+                if hideMitig
+                    box.delete(f.bx)
+                    array.remove(fvgs, i)
+                else
+                    box.set_bgcolor(f.bx, colMit)
+                    box.set_border_color(f.bx, color.new(color.gray, 60))
+                    box.set_right(f.bx, bar_index)               // freeze at the fill bar

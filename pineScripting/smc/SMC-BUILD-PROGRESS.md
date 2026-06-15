@@ -12,7 +12,7 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 |------|------------------------------|-------------|------|
 | 1    | Swing Highs & Lows           | Done        | `smc/part1-swing-highs-lows/smc-part1-swings.pine` |
 | 2    | Market Structure (BOS/CHoCH) | Done        | `smc/part2-market-structure/smc-part2-market-structure.pine` |
-| 3    | Fair Value Gaps (FVG)        | Not Started | —    |
+| 3    | Fair Value Gaps (FVG)        | Done        | `smc/part3-fvg/smc-part3-fvg.pine` |
 | 4    | Order Blocks (OB)            | Not Started | —    |
 | 5    | Liquidity Levels             | Not Started | —    |
 | 6    | Premium / Discount Zones     | Not Started | —    |
@@ -96,11 +96,11 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
-| 3.1 | Detect bullish FVG (candle[2].high < candle[0].low) | Not Started |
-| 3.2 | Detect bearish FVG (candle[2].low > candle[0].high) | Not Started |
-| 3.3 | Draw FVG boxes on chart                          | Not Started |
-| 3.4 | Mark FVG as mitigated when price fills the gap   | Not Started |
-| 3.5 | Option to hide mitigated FVGs                    | Not Started |
+| 3.1 | Detect bullish FVG (candle[2].high < candle[0].low) | Done (needs chart test) |
+| 3.2 | Detect bearish FVG (candle[2].low > candle[0].high) | Done (needs chart test) |
+| 3.3 | Draw FVG boxes on chart                          | Done (needs chart test) |
+| 3.4 | Mark FVG as mitigated when price fills the gap   | Done (needs chart test) |
+| 3.5 | Option to hide mitigated FVGs                    | Done (needs chart test) |
 
 **Notes:**
 - Standalone — does not depend on swing points
@@ -214,3 +214,5 @@ Once all parts are tested individually, merge into a single indicator script.
 | 2026-06-15 | 2.5     | Display polish: BOS/CHoCH + H/L as plain text (no boxes), BOS/CHoCH centered on broken line, dotted lines width=2, raw swing labels toggle (default off), structure H/L toggle (default on). |
 | 2026-06-15 | 2.x bug | Fixed: superseded structure H/L were deleted on each new event, so only the latest survived (older BOS showed no H). Now old levels are frozen + kept as history instead of deleted. |
 | 2026-06-15 | 2.5     | Final display model (chart-verified): only TWO line types — BOS (blue) and CHoCH (green up / red down). Lines drawn only at a break, origin bar → break bar (no extending reference lines). H/L plain text markers at structure levels. Trend background (green up / red down, transp 92). Part 2 DONE. |
+| 2026-06-15 | 3.1–3.3 | FVG detection (bullish high[2]<low[0], bearish low[2]>high[0]) + box drawing with max-box cap and right-extend. Standalone. Pending chart test. Mitigation (3.4/3.5) next. |
+| 2026-06-15 | 3.1–3.5 | After comparing with LuxAlgo SMC_refrence.pine: ported 3 ideas onto our simpler base — (1) middle-candle confirmation close[1]>high[2] / close[1]<low[2]; (2) mitigation via first-touch into gap (grey-out, or hide via toggle); (3) optional displacement-strength threshold (auto avg body%). Skipped reference's 2-box gradient (cosmetic) and HTF/lookahead (repaint risk). Uses `type fvg` to track each gap. Pending chart test. OB filter deferred to Part 4. |
