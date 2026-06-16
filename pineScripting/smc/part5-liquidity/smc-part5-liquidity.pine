@@ -1,0 +1,192 @@
+//@version=6
+indicator("SMC Part 5 - Liquidity", overlay=true, max_lines_count = 500, max_labels_count = 500)
+
+// ── Display toggles ───────────────────────────────────────────────
+showSwings = input.bool(true, "Show raw swing H/L labels")
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 1 — Swing Highs & Lows
+// ══════════════════════════════════════════════════════════════════
+
+isInside  = high < high[1] and low > low[1]
+isBullish = not isInside and close > open
+isBearish = not isInside and close < open
+
+pivotLow  = ta.pivotlow(low,  1, 1)
+pivotHigh = ta.pivothigh(high, 1, 1)
+
+var float   pendingLow      = na
+var int     pendingLowBar   = -1
+var int     bullAfterLow    = 0
+var float   maxHighSinceLow = na
+var label[] bullCountLabels = array.new<label>()
+
+var float   pendingHigh     = na
+var int     pendingHighBar  = -1
+var int     bearAfterHigh   = 0
+var float   minLowSinceHigh = na
+var label[] bearCountLabels = array.new<label>()
+
+var int     maxSwings       = 5
+var float[] swingHighPrices = array.new<float>()
+var int[]   swingHighBars   = array.new<int>()
+var float[] swingLowPrices  = array.new<float>()
+var int[]   swingLowBars    = array.new<int>()
+
+var bool swingLowJustConfirmed  = false
+var bool swingHighJustConfirmed = false
+swingLowJustConfirmed  := false
+swingHighJustConfirmed := false
+
+if not na(pendingLow) and close < pendingLow
+    for lbl in bullCountLabels
+        label.delete(lbl)
+    array.clear(bullCountLabels)
+    pendingLow      := na
+    pendingLowBar   := -1
+    bullAfterLow    := 0
+    maxHighSinceLow := na
+
+if not na(pendingHigh) and close > pendingHigh
+    for lbl in bearCountLabels
+        label.delete(lbl)
+    array.clear(bearCountLabels)
+    pendingHigh     := na
+    pendingHighBar  := -1
+    bearAfterHigh   := 0
+    minLowSinceHigh := na
+
+if not na(pivotLow) and (na(pendingLow) or pivotLow < pendingLow)
+    if not na(pendingLow)
+        for lbl in bullCountLabels
+            label.delete(lbl)
+        array.clear(bullCountLabels)
+    pendingLow      := pivotLow
+    pendingLowBar   := bar_index[1]
+    maxHighSinceLow := high[1]
+    bullAfterLow    := 0
+    if close[1] > open[1]
+        bullAfterLow := 1
+
+if not na(pivotHigh) and (na(pendingHigh) or pivotHigh > pendingHigh)
+    if not na(pendingHigh)
+        for lbl in bearCountLabels
+            label.delete(lbl)
+        array.clear(bearCountLabels)
+    pendingHigh     := pivotHigh
+    pendingHighBar  := bar_index[1]
+    minLowSinceHigh := low[1]
+    bearAfterHigh   := 0
+    if close[1] < open[1]
+        bearAfterHigh := 1
+
+if not na(pendingLow)
+    if isBullish and close > maxHighSinceLow
+        bullAfterLow    += 1
+        maxHighSinceLow := high
+        if bullAfterLow >= 3
+            if showSwings
+                label.new(pendingLowBar, pendingLow, "L",
+                          color=color.new(color.white,100), textcolor=color.red,
+                          size=size.normal, style=label.style_none, yloc=yloc.belowbar)
+            array.unshift(swingLowPrices, pendingLow)
+            array.unshift(swingLowBars,   pendingLowBar)
+            if array.size(swingLowPrices) > maxSwings
+                array.pop(swingLowPrices)
+                array.pop(swingLowBars)
+            array.clear(bullCountLabels)
+            swingLowJustConfirmed := true
+            pendingLow      := na
+            pendingLowBar   := -1
+            bullAfterLow    := 0
+            maxHighSinceLow := na
+    else
+        maxHighSinceLow := math.max(maxHighSinceLow, high)
+
+if not na(pendingHigh)
+    if isBearish and close < minLowSinceHigh
+        bearAfterHigh   += 1
+        minLowSinceHigh := low
+        if bearAfterHigh >= 3
+            if showSwings
+                label.new(pendingHighBar, pendingHigh, "H",
+                          color=color.new(color.white,100), textcolor=color.green,
+                          size=size.normal, style=label.style_none, yloc=yloc.abovebar)
+            array.unshift(swingHighPrices, pendingHigh)
+            array.unshift(swingHighBars,   pendingHighBar)
+            if array.size(swingHighPrices) > maxSwings
+                array.pop(swingHighPrices)
+                array.pop(swingHighBars)
+            array.clear(bearCountLabels)
+            swingHighJustConfirmed := true
+            pendingHigh     := na
+            pendingHighBar  := -1
+            bearAfterHigh   := 0
+            minLowSinceHigh := na
+    else
+        minLowSinceHigh := math.min(minLowSinceHigh, low)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 5.1 — Swing Liquidity (BSL / SSL)
+//
+//  Every confirmed swing HIGH leaves buy-side liquidity (BSL) resting
+//  above it; every confirmed swing LOW leaves sell-side liquidity (SSL)
+//  below it. Draw a horizontal line at each level, extending right.
+//  When price trades THROUGH the level it is "taken" → freeze + grey
+//  (or hide). Sweep-vs-clean-break distinction comes later in 5.3.
+// ══════════════════════════════════════════════════════════════════
+
+// ── Inputs ────────────────────────────────────────────────────────
+showBSL   = input.bool(true,  "Show buy-side liquidity (BSL)",  group = "Liquidity")
+showSSL   = input.bool(true,  "Show sell-side liquidity (SSL)", group = "Liquidity")
+colBSL    = input.color(color.new(color.teal,   0), "BSL line",        group = "Liquidity")
+colSSL    = input.color(color.new(color.maroon, 0), "SSL line",        group = "Liquidity")
+colTaken  = input.color(color.new(color.gray,  40), "Taken liquidity", group = "Liquidity")
+maxLiq    = input.int(12, "Max liquidity lines", minval = 1, group = "Liquidity")
+hideTaken = input.bool(false, "Hide taken liquidity", group = "Liquidity")
+
+// ── Type: one tracked liquidity level ─────────────────────────────
+type liq
+    float level
+    int   bias          // 1 = BSL (above a high), -1 = SSL (below a low)
+    line  ln
+    bool  taken = false
+
+var liq[] liqs = array.new<liq>()
+
+trimLiq() =>
+    while array.size(liqs) > maxLiq
+        old = array.shift(liqs)
+        line.delete(old.ln)
+
+// ── Create a pool when a new swing confirms ───────────────────────
+if swingHighJustConfirmed and showBSL and array.size(swingHighPrices) > 0
+    lvl = array.get(swingHighPrices, 0)
+    bar = array.get(swingHighBars,   0)
+    ln  = line.new(bar, lvl, bar_index, lvl, color = colBSL, width = 1)
+    array.push(liqs, liq.new(lvl, 1, ln))
+    trimLiq()
+
+if swingLowJustConfirmed and showSSL and array.size(swingLowPrices) > 0
+    lvl = array.get(swingLowPrices, 0)
+    bar = array.get(swingLowBars,   0)
+    ln  = line.new(bar, lvl, bar_index, lvl, color = colSSL, width = 1)
+    array.push(liqs, liq.new(lvl, -1, ln))
+    trimLiq()
+
+// ── Extend live pools; mark taken when price trades through ───────
+if array.size(liqs) > 0
+    for i = array.size(liqs) - 1 to 0
+        l = array.get(liqs, i)
+        if not l.taken
+            line.set_x2(l.ln, bar_index)                       // extend right while live
+            bool taken = l.bias == 1 ? high > l.level : low < l.level
+            if taken
+                l.taken := true
+                if hideTaken
+                    line.delete(l.ln)
+                    array.remove(liqs, i)
+                else
+                    line.set_color(l.ln, colTaken)
+                    line.set_style(l.ln, line.style_dotted)
+                    line.set_x2(l.ln, bar_index)               // freeze at the take bar

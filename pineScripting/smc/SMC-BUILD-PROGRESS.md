@@ -13,8 +13,8 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 | 1    | Swing Highs & Lows           | Done        | `smc/part1-swing-highs-lows/smc-part1-swings.pine` |
 | 2    | Market Structure (BOS/CHoCH) | Done        | `smc/part2-market-structure/smc-part2-market-structure.pine` |
 | 3    | Fair Value Gaps (FVG)        | Done        | `smc/part3-fvg/smc-part3-fvg.pine` |
-| 4    | Order Blocks (OB)            | Done (needs chart test) | `smc/part4-order-blocks/smc-part4-order-blocks.pine` |
-| 5    | Liquidity Levels             | Not Started | —    |
+| 4    | Order Blocks (OB)            | Done (chart-verified) | `smc/part4-order-blocks/smc-part4-order-blocks.pine` |
+| 5    | Liquidity Levels             | In Progress (5.1 done) | `smc/part5-liquidity/smc-part5-liquidity.pine` |
 | 6    | Premium / Discount Zones     | Not Started | —    |
 | 7    | Signal Logic & Alerts        | Not Started | —    |
 
@@ -157,15 +157,19 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
-| 5.1 | Track significant swing highs as buy-side liquidity | Not Started |
-| 5.2 | Track significant swing lows as sell-side liquidity | Not Started |
-| 5.3 | Draw liquidity lines on chart                    | Not Started |
-| 5.4 | Mark liquidity as swept when price wicks through and rejects | Not Started |
+| 5.1 | Swing liquidity (BSL above highs / SSL below lows) lines | Done (chart-verified) |
+| 5.2 | Equal highs / lows (EQH/EQL)                     | Not Started |
+| 5.3 | Sweep detection (wick through + reject vs clean break) | Not Started |
+| 5.4 | Session / previous-day high-low (PDH/PDL)        | Not Started |
+| 5.5 | Trendline liquidity (optional)                   | Not Started |
 
-**Notes:**
-- Depends on Part 1
+**Build order (agreed):** 5.1 → 5.2 → 5.3 first (pool + sweep), then 5.4; 5.5 optional.
 
-**File:** `smc/part5-liquidity/smc-part5-liquidity.pine` *(pending)*
+**Reference (LuxAlgo) coverage:** EQH/EQL (5.2) and MTF levels (5.4) have templates to adapt; swing-liquidity lines (5.1), sweep marking (5.3), trendline (5.5) are our own.
+
+**5.1 design (built 2026-06-16):** 1A/2A/3A — major Golden-Rule swings only; on confirmed swing high → BSL line, swing low → SSL line, extend right; when price trades through (high>level / low<level) → freeze + grey (dotted), "hide taken" toggle; plain lines (no labels). Type `liq`, capped at `maxLiq`. Standalone Part 1 + 5.1.
+
+**File:** `smc/part5-liquidity/smc-part5-liquidity.pine`
 
 ---
 
@@ -234,4 +238,5 @@ Once all parts are tested individually, merge into a single indicator script.
 | 2026-06-15 | 2.5     | Final display model (chart-verified): only TWO line types — BOS (blue) and CHoCH (green up / red down). Lines drawn only at a break, origin bar → break bar (no extending reference lines). H/L plain text markers at structure levels. Trend background (green up / red down, transp 92). Part 2 DONE. |
 | 2026-06-15 | 3.1–3.3 | FVG detection (bullish high[2]<low[0], bearish low[2]>high[0]) + box drawing with max-box cap and right-extend. Standalone. Pending chart test. Mitigation (3.4/3.5) next. |
 | 2026-06-15 | 3.1–3.5 | After comparing with LuxAlgo SMC_refrence.pine: ported 3 ideas onto our simpler base — (1) middle-candle confirmation close[1]>high[2] / close[1]<low[2]; (2) mitigation via first-touch into gap (grey-out, or hide via toggle); (3) optional displacement-strength threshold (auto avg body%). Skipped reference's 2-box gradient (cosmetic) and HTF/lookahead (repaint risk). Uses `type fvg` to track each gap. Pending chart test. OB filter deferred to Part 4. |
+| 2026-06-16 | 5.1     | Swing liquidity lines (BSL at confirmed swing highs / SSL at swing lows), extend right, freeze+grey when price trades through, hide-taken toggle. Major swings only, plain lines. Chart-verified. |
 | 2026-06-16 | 4.1–4.5 | Order Blocks implemented. Trigger on every BOS/CHoCH; base candle = leg's lowest-low (bull)/highest-high (bear) reusing Part 2 `scanLowBar`/`scanHighBar` via new `obBaseBar` handoff — verified identical to LuxAlgo `storeOrdeBlock` min/max selection. Two quality tiers: A+ (liquidity sweep + FVG in the leg, shown by default) vs Regular (hidden behind toggle) — our own enhancement, no reference equivalent. Three states: fresh → tapped (first touch, orange outline, kept = Part 7 entry) → broken (close through far edge, greyed; hide toggle = Option C). Volatility filter (LuxAlgo parsedHigh/Low) deliberately skipped — add only if oversized boxes appear. Pending chart test on Nifty/Sensex. |
