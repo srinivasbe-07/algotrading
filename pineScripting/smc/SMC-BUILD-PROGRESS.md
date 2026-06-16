@@ -13,7 +13,7 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 | 1    | Swing Highs & Lows           | Done        | `smc/part1-swing-highs-lows/smc-part1-swings.pine` |
 | 2    | Market Structure (BOS/CHoCH) | Done        | `smc/part2-market-structure/smc-part2-market-structure.pine` |
 | 3    | Fair Value Gaps (FVG)        | Done        | `smc/part3-fvg/smc-part3-fvg.pine` |
-| 4    | Order Blocks (OB)            | Not Started | —    |
+| 4    | Order Blocks (OB)            | Done (needs chart test) | `smc/part4-order-blocks/smc-part4-order-blocks.pine` |
 | 5    | Liquidity Levels             | Not Started | —    |
 | 6    | Premium / Discount Zones     | Not Started | —    |
 | 7    | Signal Logic & Alerts        | Not Started | —    |
@@ -118,16 +118,34 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
-| 4.1 | Find last bearish candle before a bullish BOS (bullish OB) | Not Started |
-| 4.2 | Find last bullish candle before a bearish BOS (bearish OB) | Not Started |
-| 4.3 | Draw OB zones as boxes on chart                  | Not Started |
-| 4.4 | Mark OB as mitigated when price returns to zone  | Not Started |
-| 4.5 | Option to hide mitigated OBs                     | Not Started |
+| 4.1 | Identify OB base candle on each BOS/CHoCH        | Done (needs chart test) |
+| 4.2 | Quality tiers — A+ (liquidity sweep + FVG) vs Regular | Done (needs chart test) |
+| 4.3 | Draw OB zones as boxes on chart                  | Done (needs chart test) |
+| 4.4 | Tap (first touch = entry) then Break (close-through = dead) | Done (needs chart test) |
+| 4.5 | Option to hide broken OBs                         | Done (needs chart test) |
 
-**Notes:**
-- Depends on Part 2 (BOS events trigger OB identification)
+**Agreed design (matches LuxAlgo OB selection):**
+- **Trigger:** OB identified on every structure break — BOS **and** CHoCH (Part 2 event).
+- **Base candle:** lowest-low candle of the leg (bullish) / highest-high candle (bearish), scanned from the broken level's bar → break bar. This reuses Part 2's own leg-scan (`scanLowBar`/`scanHighBar` → `obBaseBar`). Confirmed identical to LuxAlgo `storeOrdeBlock` min/max pick.
+- **Zone:** base candle full range, high → low.
+- **Quality tiers (our enhancement, no reference equivalent):**
+  - **A+ OB** = leg swept a prior swing low/high (liquidity grab) AND left an FVG. Shown by default, brighter + thicker border.
+  - **Regular OB** = break OB missing one/both. Hidden by default behind `Show regular order blocks` toggle.
+- **States:** fresh → **tapped** (first touch into zone = entry event for Part 7, gets orange outline, kept) → **broken** (body closes through far edge = dead). Broken OBs greyed; `Hide broken OBs` toggle deletes them (Option C).
+- **Mitigation rule:** break = `close < bottom` (bullish) / `close > top` (bearish). Same as LuxAlgo's CLOSE mitigation mode.
 
-**File:** `smc/part4-order-blocks/smc-part4-order-blocks.pine` *(pending)*
+**Deferred / notes:**
+- **Volatility filter** (LuxAlgo `parsedHigh/Low` swap on `(high-low) ≥ 2×ATR`) NOT implemented — add later only if oversized OB boxes appear in chart testing.
+- FVG-next-to-OB filter wiring back into Part 3 to be done at final merge.
+- **2-candle opening-gap detection (gap up/down):** ✅ DONE in Part 4 (2026-06-16) — the `hasFVG` leg-scan now also accepts a 2-candle gap (`high[o+1] < low[o]` bullish / `low[o+1] > high[o]` bearish), checked alongside the 3-candle FVG, first match wins. So a leg displacing via an opening gap (e.g. Nifty/Sensex overnight 15:30→09:15) now correctly gets `fvg✓` and the debug draws the gap box. ⏳ STILL TODO: add the same 2-candle gap to **Part 3 FVG drawing** when we next touch Part 3.
+- **OB anchor → last opposing candle before displacement (2026-06-16):** User feedback: our box was one bar off (on the pivot-low candle); correct OB = the last RED candle before the up-move (last GREEN before a down-move). `makeOB` now: (1) finds the displacement NEAREST the base (scan `for o = candOff-1 to 0`, first gap/FVG), records `dispOff` = candle just before it; (2) scans from `dispOff` toward the base for the first opposing-colour candle = the OB candle (`obCandOff`/`obBar`). Box, liquidity test, dedup all use `obBar` now. Removed the baseBar-equality dedup; overlap filter handles spatial dedup.
+- **OB overlap de-clutter (2026-06-16):** `makeOB` now skips a new OB if its zone overlaps an existing LIVE same-bias OB (one box per price area). Scans pullbacks newest-first so the freshest zone is kept. Opposite-bias overlaps allowed; broken OBs don't block new ones. Added because the full stack was too noisy.
+- **OB STACK — multiple OBs per impulse (2026-06-16, current, needs chart test):** Replaced single-OB-per-break with a STACK like LuxAlgo. New `makeOB(b, up)` function builds an OB at EVERY recent minor pullback (within `obLookback`) that launched a displacement (gap/FVG), deduped by new `ob.baseBar` field. So near + deeper fallback OBs all show; when the near one breaks (close-through), the deeper ones remain live. `showRegular` default flipped to true so the stack is visible. Liquidity sweep → A+ (bright), no sweep → Regular (dim). WHY: user noted Lux keeps multiple OBs as fallbacks; Option 2's single immediate-base OB left no deeper zone when the near one broke. `obBaseBar` (Part 2 handoff) now unused by Part 4 but still set (harmless).
+- **OB candle anchoring — IMMEDIATE-BASE anchor / Option 2 (2026-06-16, superseded by OB STACK above):** OB anchors to the **immediate base before the displacement** = the most recent minor pivot low (bullish break) / high (bearish) within `obLookback` that has an imbalance (2-candle gap OR 3-candle FVG) between it and the break. **Liquidity is now a QUALITY TAG, not an anchor requirement:** base+displacement+sweep → **A+** (shown); base+displacement, no sweep → **Regular** (continuation OB, hidden by default but visible in `dbgOB`). Fallback to leg extreme if no qualifying base. WHY changed from the liquidity-grab anchor: that version dug PAST the obvious immediate base to find a liquidity sweep deeper down (chart: circled cream zone got skipped, A+ box landed ~190pts lower). Option 2 captures continuation OBs too. Superseded approaches (all 2026-06-16): leg-extreme → liquidity-grab anchor → immediate-base.
+- **OB candle anchoring — Manipulation→Displacement model: TRIED & REVERTED (2026-06-16).** Re-anchored OB from leg-extreme to the manipulation candle before the origin displacement FVG (offset `dispO+2`). User reviewed on chart → "not looking good" → reverted to leg-extreme selection. Approach for reference if revisited: scan `for o = legLen-2 to 0` for first gap = origin displacement, OB = candle at `dispO+2`. Likely issue to diagnose before retrying: which displacement/candle gets picked when the leg has multiple gaps or a multi-candle base.
+- **In-progress (needs chart test):** liquidity-grab test changed from major Golden-Rule swings to recent **minor pivots** (`minorHighPrices/minorLowPrices`, last 10 raw `ta.pivothigh/low`). Reason: real liquidity sits at minor/local highs/lows that the major-swing test was blind to (chart showed a clear sweep tagged `liq✗`). Debug toggle `dbgOB` added: outlines every break's OB + draws the leg FVG + tags `A+/REG liq✓/✗ fvg✓/✗`. **KEEP PERMANENTLY** — user finds it valuable as an "explain my OBs" mode; gated behind toggle (default off), zero cost when off. Do NOT remove at cleanup.
+
+**File:** `smc/part4-order-blocks/smc-part4-order-blocks.pine`
 
 ---
 
@@ -216,3 +234,4 @@ Once all parts are tested individually, merge into a single indicator script.
 | 2026-06-15 | 2.5     | Final display model (chart-verified): only TWO line types — BOS (blue) and CHoCH (green up / red down). Lines drawn only at a break, origin bar → break bar (no extending reference lines). H/L plain text markers at structure levels. Trend background (green up / red down, transp 92). Part 2 DONE. |
 | 2026-06-15 | 3.1–3.3 | FVG detection (bullish high[2]<low[0], bearish low[2]>high[0]) + box drawing with max-box cap and right-extend. Standalone. Pending chart test. Mitigation (3.4/3.5) next. |
 | 2026-06-15 | 3.1–3.5 | After comparing with LuxAlgo SMC_refrence.pine: ported 3 ideas onto our simpler base — (1) middle-candle confirmation close[1]>high[2] / close[1]<low[2]; (2) mitigation via first-touch into gap (grey-out, or hide via toggle); (3) optional displacement-strength threshold (auto avg body%). Skipped reference's 2-box gradient (cosmetic) and HTF/lookahead (repaint risk). Uses `type fvg` to track each gap. Pending chart test. OB filter deferred to Part 4. |
+| 2026-06-16 | 4.1–4.5 | Order Blocks implemented. Trigger on every BOS/CHoCH; base candle = leg's lowest-low (bull)/highest-high (bear) reusing Part 2 `scanLowBar`/`scanHighBar` via new `obBaseBar` handoff — verified identical to LuxAlgo `storeOrdeBlock` min/max selection. Two quality tiers: A+ (liquidity sweep + FVG in the leg, shown by default) vs Regular (hidden behind toggle) — our own enhancement, no reference equivalent. Three states: fresh → tapped (first touch, orange outline, kept = Part 7 entry) → broken (close through far edge, greyed; hide toggle = Option C). Volatility filter (LuxAlgo parsedHigh/Low) deliberately skipped — add only if oversized boxes appear. Pending chart test on Nifty/Sensex. |
