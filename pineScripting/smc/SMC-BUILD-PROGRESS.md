@@ -14,9 +14,9 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 | 2    | Market Structure (BOS/CHoCH) | Done        | `smc/part2-market-structure/smc-part2-market-structure.pine` |
 | 3    | Fair Value Gaps (FVG)        | Done        | `smc/part3-fvg/smc-part3-fvg.pine` |
 | 4    | Order Blocks (OB)            | Done (chart-verified) | `smc/part4-order-blocks/smc-part4-order-blocks.pine` |
-| 5    | Liquidity Levels             | In Progress (5.1 done) | `smc/part5-liquidity/smc-part5-liquidity.pine` |
-| 6    | Premium / Discount Zones     | Not Started | —    |
-| 7    | Signal Logic & Alerts        | Not Started | —    |
+| 5    | Liquidity Levels             | Done (5.1–5.4; 5.5 skipped) | `smc/part5-liquidity/smc-part5-liquidity.pine` |
+| 6    | Premium / Discount Zones     | Done (chart-verified) | `smc/part6-premium-discount/smc-part6-premium-discount.pine` |
+| 7    | Signal Logic & Alerts        | Done (chart-verified) | `smc/part7-signals/smc-part7-signals.pine` |
 
 ---
 
@@ -96,11 +96,11 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
-| 3.1 | Detect bullish FVG (candle[2].high < candle[0].low) | Done (needs chart test) |
-| 3.2 | Detect bearish FVG (candle[2].low > candle[0].high) | Done (needs chart test) |
-| 3.3 | Draw FVG boxes on chart                          | Done (needs chart test) |
-| 3.4 | Mark FVG as mitigated when price fills the gap   | Done (needs chart test) |
-| 3.5 | Option to hide mitigated FVGs                    | Done (needs chart test) |
+| 3.1 | Detect bullish FVG (candle[2].high < candle[0].low) | Done (chart-verified) |
+| 3.2 | Detect bearish FVG (candle[2].low > candle[0].high) | Done (chart-verified) |
+| 3.3 | Draw FVG boxes on chart                          | Done (chart-verified) |
+| 3.4 | Mark FVG as mitigated when price fills the gap   | Done (chart-verified) |
+| 3.5 | Option to hide mitigated FVGs                    | Done (chart-verified) |
 
 **Notes:**
 - Standalone — does not depend on swing points
@@ -118,11 +118,11 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
-| 4.1 | Identify OB base candle on each BOS/CHoCH        | Done (needs chart test) |
-| 4.2 | Quality tiers — A+ (liquidity sweep + FVG) vs Regular | Done (needs chart test) |
-| 4.3 | Draw OB zones as boxes on chart                  | Done (needs chart test) |
-| 4.4 | Tap (first touch = entry) then Break (close-through = dead) | Done (needs chart test) |
-| 4.5 | Option to hide broken OBs                         | Done (needs chart test) |
+| 4.1 | Identify OB base candle on each BOS/CHoCH        | Done (chart-verified) |
+| 4.2 | Quality tiers — A+ (liquidity sweep + FVG) vs Regular | Done (chart-verified) |
+| 4.3 | Draw OB zones as boxes on chart                  | Done (chart-verified) |
+| 4.4 | Tap (first touch = entry) then Break (close-through = dead) | Done (chart-verified) |
+| 4.5 | Option to hide broken OBs                         | Done (chart-verified) |
 
 **Agreed design (matches LuxAlgo OB selection):**
 - **Trigger:** OB identified on every structure break — BOS **and** CHoCH (Part 2 event).
@@ -158,16 +158,18 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
 | 5.1 | Swing liquidity (BSL above highs / SSL below lows) lines | Done (chart-verified) |
-| 5.2 | Equal highs / lows (EQH/EQL)                     | Not Started |
-| 5.3 | Sweep detection (wick through + reject vs clean break) | Not Started |
-| 5.4 | Session / previous-day high-low (PDH/PDL)        | Not Started |
-| 5.5 | Trendline liquidity (optional)                   | Not Started |
+| 5.2 | Equal highs / lows (EQH/EQL)                     | Done (chart-verified) |
+| 5.3 | Sweep detection (wick through + reject vs clean break) | Done (chart-verified) |
+| 5.4 | Session / previous-day high-low (PDH/PDL)        | Done (chart-verified) |
+| 5.5 | Trendline liquidity (optional)                   | Skipped (optional, may revisit) |
 
 **Build order (agreed):** 5.1 → 5.2 → 5.3 first (pool + sweep), then 5.4; 5.5 optional.
 
 **Reference (LuxAlgo) coverage:** EQH/EQL (5.2) and MTF levels (5.4) have templates to adapt; swing-liquidity lines (5.1), sweep marking (5.3), trendline (5.5) are our own.
 
 **5.1 design (built 2026-06-16):** 1A/2A/3A — major Golden-Rule swings only; on confirmed swing high → BSL line, swing low → SSL line, extend right; when price trades through (high>level / low<level) → freeze + grey (dotted), "hide taken" toggle; plain lines (no labels). Type `liq`, capped at `maxLiq`. Standalone Part 1 + 5.1.
+
+**5.2 design (built 2026-06-15, reworked 2026-06-17):** EQH when a new pivot high lands within `eqThresh×ATR(200)` of the previous one; mirror for EQL. **Now uses its OWN pivot stream** (`ta.pivothigh/low(…, eqPivLen, eqPivLen)`, default len 3) instead of the Golden-Rule major-swing arrays — matches the reference (LuxAlgo runs EQ off its own `leg(size)` pivots, default 3, not the structure swings). Tracks `lastEqHigh/Low` and always advances to the newest pivot. Threshold default changed 0.5 → **0.1** with **0.5 cap** to match reference (`equalHighsLowsThresholdInput`). Same "taken" greying as 5.1. Detection math was already identical to reference; this aligns the pivot cadence + tuning. ⏳ needs chart test.
 
 **File:** `smc/part5-liquidity/smc-part5-liquidity.pine`
 
@@ -181,16 +183,24 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
-| 6.1 | Define current range (last CHoCH low to last BOS high, or vice versa) | Not Started |
-| 6.2 | Calculate equilibrium (50% of range)             | Not Started |
-| 6.3 | Shade premium zone (above 50%)                   | Not Started |
-| 6.4 | Shade discount zone (below 50%)                  | Not Started |
-| 6.5 | Optional: mark 0.705 optimal entry zone          | Not Started |
+| 6.1 | Define current range (active structure leg)      | Done (chart-verified) |
+| 6.2 | Calculate equilibrium (50% of range)             | Done (chart-verified) |
+| 6.3 | Shade premium zone (above 50%)                   | Done (chart-verified) |
+| 6.4 | Shade discount zone (below 50%)                  | Done (chart-verified) |
+| 6.5 | Optional: OTE band (0.62–0.79 retracement)       | Done (chart-verified) |
+
+**Agreed design (2026-06-17): Option A — structure-based range.**
+- **Range source:** the ACTIVE structure leg from Part 2 = `refLow → refHigh`. Chosen over (B) raw Part 1 swings (too flickery) and (C) LuxAlgo trailing strong-high/low (extra state machine, marginal gain). Reuses Part 2's coordinate system so Part 7 confluence stays consistent.
+- **Frozen until next BOS/CHoCH:** range refreshes only while BOTH `refHigh` and `refLow` are non-na. After an event one side is `na` (waiting for next confirmed swing), so the previous range holds — no flicker.
+- **Zones:** PREMIUM (eq→high), DISCOUNT (low→eq), EQUILIBRIUM line at 50%. Persistent box/line objects moved each bar (not recreated). Box left edge = leg origin (`min(refHighBar, refLowBar)`), right edge = current bar.
+- **Zone style toggle (`pdStyle`, 2026-06-17):** "Full halves" (default, ours — better for confluence) OR "Thin bands (Lux)" = reference's 5% slivers (premium 95–100%, discount 0–5%, equilibrium 47.5–52.5% band). Added after reference comparison; Lux uses Option C trailing range + thin bands, we keep Option A range but now offer Lux's band rendering as an option. Thin mode draws an `eqBox` band instead of the `eqLine`.
+- **OTE toggle (default off):** long OTE 21–38% above low, short OTE 62–79% above low (= 0.62–0.79 retracement each side).
+- **Trend-highlight (`hlActive`, default off):** when on, dims the non-actionable half (premium dimmed in uptrend, discount in downtrend) via `dimTrans`.
 
 **Notes:**
-- Depends on Part 2
+- Depends on Part 1 + Part 2 (both carried into the file).
 
-**File:** `smc/part6-premium-discount/smc-part6-premium-discount.pine` *(pending)*
+**File:** `smc/part6-premium-discount/smc-part6-premium-discount.pine`
 
 ---
 
@@ -202,26 +212,36 @@ Target: Indicator with entry/exit alerts compatible with broker webhook (two-ale
 
 | # | Task                                              | Status      |
 |---|---------------------------------------------------|-------------|
-| 7.1 | Long condition: bullish structure + discount + OB/FVG confluence | Not Started |
-| 7.2 | Short condition: bearish structure + premium + OB/FVG confluence | Not Started |
-| 7.3 | Exit condition: structure break against trade     | Not Started |
-| 7.4 | Entry alert ("SMC: BUY" / "SMC: SELL")           | Not Started |
-| 7.5 | Exit alert ("SMC: CLOSE LONG" / "SMC: CLOSE SHORT") | Not Started |
+| 7.1 | Long: trend up + bullish OB/FVG tap + discount  | Done (chart-verified) |
+| 7.2 | Short: trend down + bearish OB/FVG tap + premium | Done (chart-verified) |
+| 7.3 | Exit: structural SL OR fixed-R:R target          | Done (chart-verified) |
+| 7.4 | Entry alerts ("SMC: BUY" / "SMC: SELL")          | Done (chart-verified) |
+| 7.5 | SL + Target alerts (3-alert structure)           | Done (chart-verified) |
 
-**Notes:**
-- Two alerts only (entry + exit) — broker algo is built on this structure
-- Fixed SL: 15 pts Nifty, 35 pts Sensex (handled on broker side, not in Pine Script)
-- Alerts set to "Once Per Bar" (not bar close) for intrabar triggers
+**Agreed design (2026-06-17):**
+- **Confluence = BALANCED:** LONG = `trend=="up"` + a bullish OB **or** FVG tapped this bar + tap in DISCOUNT (`close < eq`). SHORT = mirror in PREMIUM (`close > eq`). (Not strict — no liquidity-sweep requirement; not loose — location filter enforced.)
+- **Entry trigger = OB *or* FVG tap.** Both feed a per-bar `longEdge`/`shortEdge` = far edge of the tapped zone.
+- **SL = structural** = far edge of the tapped zone (`longEdge`/`shortEdge`). NOT the fixed 15/35.
+- **Target = fixed R:R** (`rrRatio` input, default 2.0) of the SL distance. (Opposite-CHoCH exit was considered then replaced by R:R target.)
+- **ONE trade at a time:** `pos` state machine (0/±1); no new entry until flat; `enteredThisBar` guard stops same-bar entry+exit churn. SL checked before target.
+- **THREE alerts (supersedes the 2-alert convention for SMC):** entry (`SMC: BUY`/`SMC: SELL`), `SMC: SL HIT`, `SMC: TARGET HIT` — all editable inputs, fired via `alert(msg, alert.freq_once_per_bar)`.
+- **Equilibrium** = frozen Option-A structure range (`math.avg(refHigh, refLow)`), plotted as a stepline.
+- Carries Parts 1, 2, 4 (OB) + lean Part 3 (FVG) + lean Part 6 (eq). `dbgOB` default flipped to false here for a clean signals chart.
 
-**File:** `smc/part7-signals/smc-part7-signals.pine` *(pending)*
+**Open follow-ups for chart test:**
+- Confirm entry fires intrabar (once-per-bar alert) where an OB/FVG taps in the right zone.
+- Watch the frozen-range eq right after a CHoCH (uses prior leg until new swing confirms) — verify discount/premium judged sensibly.
+- SL/target use `alert()` dynamic messages → in TradingView create ONE alert with condition "Any alert() function call". The 3 message strings differentiate the broker action.
+
+**File:** `smc/part7-signals/smc-part7-signals.pine`
 
 ---
 
 ## Final Combined Script
 
-Once all parts are tested individually, merge into a single indicator script.
+**Built 2026-06-17 (needs chart test).** All-in-one **visualization** indicator = Parts 1–6 merged, **no Part 7 signals/alerts**, **Premium/Discount hidden by default**. Use this for chart analysis; use the Part 7 file for the trade-signal/webhook version. Part 3's FVG color inputs were renamed (`colFvgBull/colFvgBear`, `trimFVG`) to avoid clashing with Part 4's OB colors.
 
-**File:** `smc/smc-indicator.pine` *(pending)*
+**File:** `smc/smc-indicator.pine`
 
 ---
 
@@ -229,6 +249,7 @@ Once all parts are tested individually, merge into a single indicator script.
 
 | Date       | Part | Change |
 |------------|------|--------|
+| 2026-06-17 | merge | **Final combined VISUALIZATION indicator built: `smc/smc-indicator.pine`.** Merges Parts 1–6 (full chart-verified versions: Part 3 FVG with mitigation/threshold, Part 4 OB, Part 5 BSL/SSL+EQH/EQL+sweeps+session levels, Part 6 P/D). **Excludes Part 7 signals/alerts** (those stay in the Part 7 file). **Premium/Discount HIDDEN by default** (`showPD`/`showEqL` default false). Part 3 color inputs renamed `colFvgBull/colFvgBear` + `trim→trimFVG` to avoid colliding with Part 4's OB `colBull/colBear`. Needs chart test (compile + visual). |
 | 2026-06-14 | —    | Document created, roadmap defined |
 | 2026-06-14 | 1.1–1.3 | Swing H/L detection complete — 3-candle Golden Rule, lock + invalidation, label cleanup on pivot replacement |
 | 2026-06-14 | 1.4     | Confirmed swing H/L stored in arrays (last 5, index 0 = most recent) for Part 2 consumption |
@@ -239,4 +260,11 @@ Once all parts are tested individually, merge into a single indicator script.
 | 2026-06-15 | 3.1–3.3 | FVG detection (bullish high[2]<low[0], bearish low[2]>high[0]) + box drawing with max-box cap and right-extend. Standalone. Pending chart test. Mitigation (3.4/3.5) next. |
 | 2026-06-15 | 3.1–3.5 | After comparing with LuxAlgo SMC_refrence.pine: ported 3 ideas onto our simpler base — (1) middle-candle confirmation close[1]>high[2] / close[1]<low[2]; (2) mitigation via first-touch into gap (grey-out, or hide via toggle); (3) optional displacement-strength threshold (auto avg body%). Skipped reference's 2-box gradient (cosmetic) and HTF/lookahead (repaint risk). Uses `type fvg` to track each gap. Pending chart test. OB filter deferred to Part 4. |
 | 2026-06-16 | 5.1     | Swing liquidity lines (BSL at confirmed swing highs / SSL at swing lows), extend right, freeze+grey when price trades through, hide-taken toggle. Major swings only, plain lines. Chart-verified. |
+| 2026-06-17 | 5.2 | EQH/EQL reworked to match reference: own pivot stream (`ta.pivothigh/low`, default len 3) instead of Golden-Rule swings; threshold default 0.5→0.1, capped at 0.5. Neat label: tiny, transparent bg (`color(na)`), centered between the pair. Chart-verified. |
+| 2026-06-17 | 7.1–7.5 | Signal logic + alerts built (capstone). Balanced confluence (trend + bullish/bearish OB-or-FVG tap in discount/premium), structural SL (far edge of tapped zone), fixed-R:R target (default 2.0), one trade at a time. THREE alerts (entry BUY/SELL, SL HIT, TARGET HIT) via `alert()` once-per-bar — supersedes 2-alert convention for SMC. Carries Parts 1/2/4 + lean FVG + eq. Needs chart test. |
+| 2026-06-17 | — | **Decision: internal (dual-TF) structure deliberately NOT built.** Reference comparison flagged it as the main gap, but user will use MULTI-TIMEFRAME instead — run the single swing-structure engine on a lower TF for entries; the lower TF's structure = the higher TF's internal structure. Avoids a redundant second structure layer. Do not propose building internal structure. Also: OB volume feature considered then dropped (cash-index volume is 0/na on TradingView; only futures carry volume). |
+| 2026-06-17 | 6.1–6.5 | Premium/Discount built (Option A — structure-based range). Range = active Part 2 leg (refLow→refHigh), frozen until next BOS/CHoCH (refresh only when both ends valid). Premium/discount boxes + equilibrium line (persistent objects moved each bar). Optional OTE band (0.62–0.79) + optional trend-aware dimming, both default off. New file carries Part 1+2 in. Needs chart test. |
+| 2026-06-17 | 5.5 | Skipped (optional trendline liquidity) — least-used for intraday options; may revisit. Part 5 closed. |
+| 2026-06-17 | 5.4 | Session/period levels: PDH/PDL + PWH/PWL via `request.security("D"/"W", [high[1],low[1]], lookahead_on)` (no-repaint, auto-aligns per symbol — NSE session / 17:00-ET forex / 00:00-UTC crypto, so no session config needed for these). Today's session H/L (ratchets outward, dashed) + Opening range (first `orMins` of session) are intraday-session based — session window + timezone are INPUTS (default NSE `0915-1530 Asia/Kolkata`; change for FX/crypto). Fixed levels (PDH/PDL/PWH/PWL/OR) reuse 5.3 sweep tag + 5.1 taken-greying via `plvl` type + `mkLevel`/`updLevel` helpers; prior period's line deleted on roll so only current shows. Needs chart test. |
+| 2026-06-17 | 5.3 | Sweep detection added to BOTH 5.1 (BSL/SSL) and 5.2 (EQH/EQL). When a level is taken, classify on the same bar: SWEEP = wick through + `close` back on origin side → small tag at the wick (`drawSweep`, default "x", orange, tiny, transparent bg); BREAK = `close` through → no tag. Line still greys via `colTaken` (no recolor — user chose tag-only). Inputs in "Sweeps" group. Needs chart test. |
 | 2026-06-16 | 4.1–4.5 | Order Blocks implemented. Trigger on every BOS/CHoCH; base candle = leg's lowest-low (bull)/highest-high (bear) reusing Part 2 `scanLowBar`/`scanHighBar` via new `obBaseBar` handoff — verified identical to LuxAlgo `storeOrdeBlock` min/max selection. Two quality tiers: A+ (liquidity sweep + FVG in the leg, shown by default) vs Regular (hidden behind toggle) — our own enhancement, no reference equivalent. Three states: fresh → tapped (first touch, orange outline, kept = Part 7 entry) → broken (close through far edge, greyed; hide toggle = Option C). Volatility filter (LuxAlgo parsedHigh/Low) deliberately skipped — add only if oversized boxes appear. Pending chart test on Nifty/Sensex. |

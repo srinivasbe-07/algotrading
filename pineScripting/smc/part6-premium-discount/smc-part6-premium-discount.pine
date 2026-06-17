@@ -1,0 +1,370 @@
+//@version=6
+indicator("SMC Part 6 - Premium/Discount", overlay=true, max_lines_count = 500, max_labels_count = 500, max_boxes_count = 50)
+
+// ── Display toggles ───────────────────────────────────────────────
+showSwings = input.bool(false, "Show raw swing H/L labels")
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 1 — Swing Highs & Lows
+// ══════════════════════════════════════════════════════════════════
+
+isInside  = high < high[1] and low > low[1]
+isBullish = not isInside and close > open
+isBearish = not isInside and close < open
+
+pivotLow  = ta.pivotlow(low,  1, 1)
+pivotHigh = ta.pivothigh(high, 1, 1)
+
+var float   pendingLow      = na
+var int     pendingLowBar   = -1
+var int     bullAfterLow    = 0
+var float   maxHighSinceLow = na
+var label[] bullCountLabels = array.new<label>()
+
+var float   pendingHigh     = na
+var int     pendingHighBar  = -1
+var int     bearAfterHigh   = 0
+var float   minLowSinceHigh = na
+var label[] bearCountLabels = array.new<label>()
+
+var int     maxSwings       = 5
+var float[] swingHighPrices = array.new<float>()
+var int[]   swingHighBars   = array.new<int>()
+var float[] swingLowPrices  = array.new<float>()
+var int[]   swingLowBars    = array.new<int>()
+
+var bool swingLowJustConfirmed  = false
+var bool swingHighJustConfirmed = false
+swingLowJustConfirmed  := false
+swingHighJustConfirmed := false
+
+if not na(pendingLow) and close < pendingLow
+    for lbl in bullCountLabels
+        label.delete(lbl)
+    array.clear(bullCountLabels)
+    pendingLow      := na
+    pendingLowBar   := -1
+    bullAfterLow    := 0
+    maxHighSinceLow := na
+
+if not na(pendingHigh) and close > pendingHigh
+    for lbl in bearCountLabels
+        label.delete(lbl)
+    array.clear(bearCountLabels)
+    pendingHigh     := na
+    pendingHighBar  := -1
+    bearAfterHigh   := 0
+    minLowSinceHigh := na
+
+if not na(pivotLow) and (na(pendingLow) or pivotLow < pendingLow)
+    if not na(pendingLow)
+        for lbl in bullCountLabels
+            label.delete(lbl)
+        array.clear(bullCountLabels)
+    pendingLow      := pivotLow
+    pendingLowBar   := bar_index[1]
+    maxHighSinceLow := high[1]
+    bullAfterLow    := 0
+    if close[1] > open[1]
+        bullAfterLow := 1
+
+if not na(pivotHigh) and (na(pendingHigh) or pivotHigh > pendingHigh)
+    if not na(pendingHigh)
+        for lbl in bearCountLabels
+            label.delete(lbl)
+        array.clear(bearCountLabels)
+    pendingHigh     := pivotHigh
+    pendingHighBar  := bar_index[1]
+    minLowSinceHigh := low[1]
+    bearAfterHigh   := 0
+    if close[1] < open[1]
+        bearAfterHigh := 1
+
+if not na(pendingLow)
+    if isBullish and close > maxHighSinceLow
+        bullAfterLow    += 1
+        maxHighSinceLow := high
+        if bullAfterLow >= 3
+            if showSwings
+                label.new(pendingLowBar, pendingLow, "L",
+                          color=color.new(color.white,100), textcolor=color.red,
+                          size=size.normal, style=label.style_none, yloc=yloc.belowbar)
+            array.unshift(swingLowPrices, pendingLow)
+            array.unshift(swingLowBars,   pendingLowBar)
+            if array.size(swingLowPrices) > maxSwings
+                array.pop(swingLowPrices)
+                array.pop(swingLowBars)
+            array.clear(bullCountLabels)
+            swingLowJustConfirmed := true
+            pendingLow      := na
+            pendingLowBar   := -1
+            bullAfterLow    := 0
+            maxHighSinceLow := na
+    else
+        maxHighSinceLow := math.max(maxHighSinceLow, high)
+
+if not na(pendingHigh)
+    if isBearish and close < minLowSinceHigh
+        bearAfterHigh   += 1
+        minLowSinceHigh := low
+        if bearAfterHigh >= 3
+            if showSwings
+                label.new(pendingHighBar, pendingHigh, "H",
+                          color=color.new(color.white,100), textcolor=color.green,
+                          size=size.normal, style=label.style_none, yloc=yloc.abovebar)
+            array.unshift(swingHighPrices, pendingHigh)
+            array.unshift(swingHighBars,   pendingHighBar)
+            if array.size(swingHighPrices) > maxSwings
+                array.pop(swingHighPrices)
+                array.pop(swingHighBars)
+            array.clear(bearCountLabels)
+            swingHighJustConfirmed := true
+            pendingHigh     := na
+            pendingHighBar  := -1
+            bearAfterHigh   := 0
+            minLowSinceHigh := na
+    else
+        minLowSinceHigh := math.min(minLowSinceHigh, low)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 2 — Market Structure (BOS / CHoCH)
+// ══════════════════════════════════════════════════════════════════
+
+// ── Inputs ────────────────────────────────────────────────────────
+colBOS       = input.color(color.blue,  "BOS label")
+colUp        = input.color(color.green, "Bullish level / CHoCH")
+colDown      = input.color(color.red,   "Bearish level / CHoCH")
+showStructHL = input.bool(true, "Show structure H/L labels")
+showTrendBg  = input.bool(true, "Trend background (green up / red down)")
+
+// ── State ─────────────────────────────────────────────────────────
+var string trend             = "none"
+var float  refHigh           = na
+var float  refLow            = na
+var int    refHighBar        = -1
+var int    refLowBar         = -1
+var int    eventBar          = -1
+var bool   waitingForRefHigh = false
+var bool   waitingForRefLow  = false
+var label  refHighLbl        = na
+var label  refLowLbl         = na
+
+// ── Initialize: once both confirmed H and L exist, set trend from
+//   which swing is most recent — no need to wait for a price break ─
+if trend == "none" and array.size(swingHighPrices) > 0 and array.size(swingLowPrices) > 0
+    refHigh    := array.get(swingHighPrices, 0)
+    refHighBar := array.get(swingHighBars,   0)
+    refLow     := array.get(swingLowPrices,  0)
+    refLowBar  := array.get(swingLowBars,    0)
+    // Most recent swing tells us current structure direction
+    trend      := refHighBar > refLowBar ? "up" : "down"
+    if showStructHL
+        refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+        refLowLbl  := label.new(refLowBar,  refLow,  "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+
+// ── Wait for Golden Rule confirmation of the pending side ─────────
+//   The "other" side after an event is left na until Part 1 confirms
+//   the next swing in that direction past the event bar.
+if waitingForRefHigh and swingHighJustConfirmed and array.size(swingHighBars) > 0 and array.get(swingHighBars, 0) > eventBar
+    refHigh           := array.get(swingHighPrices, 0)
+    refHighBar        := array.get(swingHighBars,   0)
+    waitingForRefHigh := false
+    if showStructHL
+        refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+
+if waitingForRefLow and swingLowJustConfirmed and array.size(swingLowBars) > 0 and array.get(swingLowBars, 0) > eventBar
+    refLow           := array.get(swingLowPrices, 0)
+    refLowBar        := array.get(swingLowBars,   0)
+    waitingForRefLow := false
+    if showStructHL
+        refLowLbl := label.new(refLowBar, refLow, "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+
+// ── BOS / CHoCH Detection ────────────────────────────────────────
+
+bool   eventFired = false
+bool   goingUp    = false
+string eventType  = ""
+
+if trend != "none"
+    if not na(refHigh) and close > refHigh
+        eventFired := true
+        goingUp    := true
+        eventType  := trend == "up" ? "BOS" : "CHoCH"
+
+    if not na(refLow) and close < refLow
+        eventFired := true
+        goingUp    := false
+        eventType  := trend == "down" ? "BOS" : "CHoCH"
+
+// ── Process Event ────────────────────────────────────────────────
+//   The ONLY place a line is drawn: one per BOS/CHoCH, from the broken
+//   level's origin bar to the break bar. Two line types only: BOS, CHoCH.
+if eventFired
+    col          = eventType == "BOS" ? colBOS : (goingUp ? colUp : colDown)
+    float lvl    = goingUp ? refHigh : refLow
+    int   lvlBar = goingUp ? refHighBar : refLowBar
+    int   midBar = int(math.avg(lvlBar, bar_index))   // center of the broken line
+
+    line.new(lvlBar, lvl, bar_index, lvl, color = col, width = 2, style = line.style_dotted)
+    label.new(midBar, lvl, eventType,
+              color     = color.new(color.white, 100),
+              textcolor = col,
+              size      = size.small,
+              style     = label.style_none)
+
+    eventBar := bar_index
+
+    if goingUp
+        trend := "up"
+        // Immediate side: new refLow = lowest low scanned from refHighBar → event bar
+        float scanLow    = low
+        int   scanLowBar = bar_index
+        for i = 0 to bar_index - refHighBar
+            if low[i] < scanLow
+                scanLow    := low[i]
+                scanLowBar := bar_index - i
+        refLow    := scanLow
+        refLowBar := scanLowBar
+        if showStructHL
+            refLowLbl := label.new(refLowBar, refLow, "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+        // Waiting side: refHigh from the next confirmed swing high (label kept as history)
+        refHigh           := na
+        refHighBar        := -1
+        refHighLbl        := na
+        waitingForRefHigh := true
+        waitingForRefLow  := false
+    else
+        trend := "down"
+        // Immediate side: new refHigh = highest high scanned from refLowBar → event bar
+        float scanHigh    = high
+        int   scanHighBar = bar_index
+        for i = 0 to bar_index - refLowBar
+            if high[i] > scanHigh
+                scanHigh    := high[i]
+                scanHighBar := bar_index - i
+        refHigh    := scanHigh
+        refHighBar := scanHighBar
+        if showStructHL
+            refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+        // Waiting side: refLow from the next confirmed swing low (label kept as history)
+        refLow            := na
+        refLowBar         := -1
+        refLowLbl         := na
+        waitingForRefLow  := true
+        waitingForRefHigh := false
+
+// ── Trend background ──────────────────────────────────────────────
+bgcolor(showTrendBg ? (trend == "up" ? color.new(colUp, 92) : trend == "down" ? color.new(colDown, 92) : na) : na)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 6 — Premium / Discount Zones   (Option A: structure-based range)
+//
+//  Range = the ACTIVE structure leg from Part 2 (refLow → refHigh).
+//  Split at 50% = EQUILIBRIUM. Above = PREMIUM (sell zone), below =
+//  DISCOUNT (buy zone). The range is FROZEN until the next BOS/CHoCH:
+//  we refresh it only while BOTH refHigh and refLow are valid, so during
+//  the "waiting" side right after an event the previous range holds.
+//
+//  Edge: in an uptrend buy only from discount; in a downtrend sell only
+//  from premium. Optional OTE band (0.62–0.79 retracement) = deepest,
+//  best-R:R slice of each half.
+// ══════════════════════════════════════════════════════════════════
+
+// ── Inputs ────────────────────────────────────────────────────────
+grpPD    = "Premium / Discount"
+showPD   = input.bool(true,  "Show premium/discount zones",               group = grpPD)
+pdStyle  = input.string("Full halves", "Zone style", options = ["Full halves", "Thin bands (Lux)"], group = grpPD)
+showEqL  = input.bool(true,  "Show equilibrium (line / band)",            group = grpPD)
+showOTE  = input.bool(false, "Show OTE zones (0.62–0.79)",                group = grpPD)
+hlActive = input.bool(false, "Highlight only actionable half (per trend)", group = grpPD)
+colPrem  = input.color(color.new(color.red,   85), "Premium fill",   group = grpPD)
+colDisc  = input.color(color.new(color.green, 85), "Discount fill",  group = grpPD)
+colEqL   = input.color(color.new(color.gray,   0), "Equilibrium",    group = grpPD)
+colOTEc  = input.color(color.new(color.orange,75), "OTE fill",       group = grpPD)
+dimTrans = input.int(96, "Dimmed-half transparency", minval = 0, maxval = 100, group = grpPD)
+
+// ── Frozen structure range (refresh only when BOTH ends are valid) ─
+var float rngHigh    = na
+var int   rngHighBar = na
+var float rngLow     = na
+var int   rngLowBar  = na
+
+if not na(refHigh) and not na(refLow)
+    rngHigh    := refHigh
+    rngHighBar := refHighBar
+    rngLow     := refLow
+    rngLowBar  := refLowBar
+
+// ── Persistent drawing objects (created once, moved each bar) ──────
+var box  premBox = na
+var box  discBox = na
+var line eqLine  = na
+var box  eqBox   = na      // equilibrium band (thin-bands / Lux style)
+var box  oteLoB  = na      // discount-side OTE (long entries)
+var box  oteHiB  = na      // premium-side OTE (short entries)
+
+if not na(rngHigh) and not na(rngLow) and rngHigh > rngLow
+    float eq      = math.avg(rngHigh, rngLow)
+    float rng     = rngHigh - rngLow
+    int   leftBar = math.min(rngHighBar, rngLowBar)   // leg origin = box left edge
+
+    // Dim the half that the current trend says is NOT actionable
+    bool  dimPrem = hlActive and trend == "up"
+    bool  dimDisc = hlActive and trend == "down"
+    color premCol = dimPrem ? color.new(colPrem, dimTrans) : colPrem
+    color discCol = dimDisc ? color.new(colDisc, dimTrans) : colDisc
+
+    // Zone extents depend on style:
+    //   Full halves → premium = eq→high, discount = low→eq
+    //   Thin bands  → Lux's 5% slivers at each extreme (95–100% / 0–5%)
+    bool  thin    = pdStyle == "Thin bands (Lux)"
+    float premTop = rngHigh
+    float premBot = thin ? 0.95 * rngHigh + 0.05 * rngLow : eq
+    float discTop = thin ? 0.95 * rngLow  + 0.05 * rngHigh : eq
+    float discBot = rngLow
+
+    // PREMIUM (sell) and DISCOUNT (buy)
+    if showPD
+        if na(premBox)
+            premBox := box.new(leftBar, premTop, bar_index, premBot, border_color = na, bgcolor = premCol)
+            discBox := box.new(leftBar, discTop, bar_index, discBot, border_color = na, bgcolor = discCol)
+        else
+            box.set_lefttop(premBox, leftBar, premTop)
+            box.set_rightbottom(premBox, bar_index, premBot)
+            box.set_bgcolor(premBox, premCol)
+            box.set_lefttop(discBox, leftBar, discTop)
+            box.set_rightbottom(discBox, bar_index, discBot)
+            box.set_bgcolor(discBox, discCol)
+
+    // EQUILIBRIUM — single line (full halves) or 47.5–52.5% band (thin/Lux)
+    if showEqL
+        if thin
+            float eqT = 0.525 * rngHigh + 0.475 * rngLow
+            float eqB = 0.525 * rngLow  + 0.475 * rngHigh
+            if na(eqBox)
+                eqBox := box.new(leftBar, eqT, bar_index, eqB, border_color = na, bgcolor = color.new(colEqL, 80))
+            else
+                box.set_lefttop(eqBox, leftBar, eqT)
+                box.set_rightbottom(eqBox, bar_index, eqB)
+        else
+            if na(eqLine)
+                eqLine := line.new(leftBar, eq, bar_index, eq, color = colEqL, style = line.style_dashed, width = 1)
+            else
+                line.set_xy1(eqLine, leftBar, eq)
+                line.set_xy2(eqLine, bar_index, eq)
+
+    // OTE bands: long OTE = 21–38% above low (0.62–0.79 retr down from high);
+    //            short OTE = 62–79% above low (mirror)
+    if showOTE
+        float loteB = rngLow + 0.21 * rng
+        float loteT = rngLow + 0.38 * rng
+        float poteB = rngLow + 0.62 * rng
+        float poteT = rngLow + 0.79 * rng
+        if na(oteLoB)
+            oteLoB := box.new(leftBar, loteT, bar_index, loteB, border_color = na, bgcolor = colOTEc)
+            oteHiB := box.new(leftBar, poteT, bar_index, poteB, border_color = na, bgcolor = colOTEc)
+        else
+            box.set_lefttop(oteLoB, leftBar, loteT)
+            box.set_rightbottom(oteLoB, bar_index, loteB)
+            box.set_lefttop(oteHiB, leftBar, poteT)
+            box.set_rightbottom(oteHiB, bar_index, poteB)

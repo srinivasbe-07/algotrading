@@ -1,0 +1,833 @@
+//@version=6
+indicator("SMC - Smart Money Concepts", overlay=true, max_boxes_count = 500, max_labels_count = 500, max_lines_count = 500)
+
+//  Final combined VISUALIZATION indicator — Parts 1–6, no signals/alerts.
+//  (Entry/exit signals + webhook alerts live in the separate Part 7 file.)
+//  Parts: 1 Swing H/L · 2 Market Structure · 3 FVG · 4 Order Blocks ·
+//         5 Liquidity (BSL/SSL, EQH/EQL, sweeps, session levels) ·
+//         6 Premium/Discount (HIDDEN by default).
+
+// ── Display toggles ───────────────────────────────────────────────
+showSwings = input.bool(false, "Show raw swing H/L labels")
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 1 — Swing Highs & Lows
+// ══════════════════════════════════════════════════════════════════
+
+isInside  = high < high[1] and low > low[1]
+isBullish = not isInside and close > open
+isBearish = not isInside and close < open
+
+pivotLow  = ta.pivotlow(low,  1, 1)
+pivotHigh = ta.pivothigh(high, 1, 1)
+
+var float   pendingLow      = na
+var int     pendingLowBar   = -1
+var int     bullAfterLow    = 0
+var float   maxHighSinceLow = na
+var label[] bullCountLabels = array.new<label>()
+
+var float   pendingHigh     = na
+var int     pendingHighBar  = -1
+var int     bearAfterHigh   = 0
+var float   minLowSinceHigh = na
+var label[] bearCountLabels = array.new<label>()
+
+var int     maxSwings       = 5
+var float[] swingHighPrices = array.new<float>()
+var int[]   swingHighBars   = array.new<int>()
+var float[] swingLowPrices  = array.new<float>()
+var int[]   swingLowBars    = array.new<int>()
+
+// Minor (raw) pivots — used by Part 4 for liquidity-grab detection
+var int     maxMinor        = 10
+var float[] minorHighPrices = array.new<float>()
+var int[]   minorHighBars   = array.new<int>()
+var float[] minorLowPrices  = array.new<float>()
+var int[]   minorLowBars    = array.new<int>()
+
+var bool swingLowJustConfirmed  = false
+var bool swingHighJustConfirmed = false
+swingLowJustConfirmed  := false
+swingHighJustConfirmed := false
+
+if not na(pivotHigh)
+    array.unshift(minorHighPrices, pivotHigh)
+    array.unshift(minorHighBars,   bar_index[1])
+    if array.size(minorHighPrices) > maxMinor
+        array.pop(minorHighPrices)
+        array.pop(minorHighBars)
+if not na(pivotLow)
+    array.unshift(minorLowPrices, pivotLow)
+    array.unshift(minorLowBars,   bar_index[1])
+    if array.size(minorLowPrices) > maxMinor
+        array.pop(minorLowPrices)
+        array.pop(minorLowBars)
+
+if not na(pendingLow) and close < pendingLow
+    for lbl in bullCountLabels
+        label.delete(lbl)
+    array.clear(bullCountLabels)
+    pendingLow      := na
+    pendingLowBar   := -1
+    bullAfterLow    := 0
+    maxHighSinceLow := na
+
+if not na(pendingHigh) and close > pendingHigh
+    for lbl in bearCountLabels
+        label.delete(lbl)
+    array.clear(bearCountLabels)
+    pendingHigh     := na
+    pendingHighBar  := -1
+    bearAfterHigh   := 0
+    minLowSinceHigh := na
+
+if not na(pivotLow) and (na(pendingLow) or pivotLow < pendingLow)
+    if not na(pendingLow)
+        for lbl in bullCountLabels
+            label.delete(lbl)
+        array.clear(bullCountLabels)
+    pendingLow      := pivotLow
+    pendingLowBar   := bar_index[1]
+    maxHighSinceLow := high[1]
+    bullAfterLow    := 0
+    if close[1] > open[1]
+        bullAfterLow := 1
+
+if not na(pivotHigh) and (na(pendingHigh) or pivotHigh > pendingHigh)
+    if not na(pendingHigh)
+        for lbl in bearCountLabels
+            label.delete(lbl)
+        array.clear(bearCountLabels)
+    pendingHigh     := pivotHigh
+    pendingHighBar  := bar_index[1]
+    minLowSinceHigh := low[1]
+    bearAfterHigh   := 0
+    if close[1] < open[1]
+        bearAfterHigh := 1
+
+if not na(pendingLow)
+    if isBullish and close > maxHighSinceLow
+        bullAfterLow    += 1
+        maxHighSinceLow := high
+        if bullAfterLow >= 3
+            if showSwings
+                label.new(pendingLowBar, pendingLow, "L",
+                          color=color.new(color.white,100), textcolor=color.red,
+                          size=size.normal, style=label.style_none, yloc=yloc.belowbar)
+            array.unshift(swingLowPrices, pendingLow)
+            array.unshift(swingLowBars,   pendingLowBar)
+            if array.size(swingLowPrices) > maxSwings
+                array.pop(swingLowPrices)
+                array.pop(swingLowBars)
+            array.clear(bullCountLabels)
+            swingLowJustConfirmed := true
+            pendingLow      := na
+            pendingLowBar   := -1
+            bullAfterLow    := 0
+            maxHighSinceLow := na
+    else
+        maxHighSinceLow := math.max(maxHighSinceLow, high)
+
+if not na(pendingHigh)
+    if isBearish and close < minLowSinceHigh
+        bearAfterHigh   += 1
+        minLowSinceHigh := low
+        if bearAfterHigh >= 3
+            if showSwings
+                label.new(pendingHighBar, pendingHigh, "H",
+                          color=color.new(color.white,100), textcolor=color.green,
+                          size=size.normal, style=label.style_none, yloc=yloc.abovebar)
+            array.unshift(swingHighPrices, pendingHigh)
+            array.unshift(swingHighBars,   pendingHighBar)
+            if array.size(swingHighPrices) > maxSwings
+                array.pop(swingHighPrices)
+                array.pop(swingHighBars)
+            array.clear(bearCountLabels)
+            swingHighJustConfirmed := true
+            pendingHigh     := na
+            pendingHighBar  := -1
+            bearAfterHigh   := 0
+            minLowSinceHigh := na
+    else
+        minLowSinceHigh := math.min(minLowSinceHigh, low)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 2 — Market Structure (BOS / CHoCH)
+// ══════════════════════════════════════════════════════════════════
+
+colBOS       = input.color(color.blue,  "BOS label",                       group = "Structure")
+colUp        = input.color(color.green, "Bullish level / CHoCH",           group = "Structure")
+colDown      = input.color(color.red,   "Bearish level / CHoCH",           group = "Structure")
+showStructHL = input.bool(true, "Show structure H/L labels",               group = "Structure")
+showTrendBg  = input.bool(true, "Trend background (green up / red down)",   group = "Structure")
+
+var string trend             = "none"
+var float  refHigh           = na
+var float  refLow            = na
+var int    refHighBar        = -1
+var int    refLowBar         = -1
+var int    eventBar          = -1
+var bool   waitingForRefHigh = false
+var bool   waitingForRefLow  = false
+var label  refHighLbl        = na
+var label  refLowLbl         = na
+var int    obBaseBar         = -1
+
+if trend == "none" and array.size(swingHighPrices) > 0 and array.size(swingLowPrices) > 0
+    refHigh    := array.get(swingHighPrices, 0)
+    refHighBar := array.get(swingHighBars,   0)
+    refLow     := array.get(swingLowPrices,  0)
+    refLowBar  := array.get(swingLowBars,    0)
+    trend      := refHighBar > refLowBar ? "up" : "down"
+    if showStructHL
+        refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+        refLowLbl  := label.new(refLowBar,  refLow,  "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+
+if waitingForRefHigh and swingHighJustConfirmed and array.size(swingHighBars) > 0 and array.get(swingHighBars, 0) > eventBar
+    refHigh           := array.get(swingHighPrices, 0)
+    refHighBar        := array.get(swingHighBars,   0)
+    waitingForRefHigh := false
+    if showStructHL
+        refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+
+if waitingForRefLow and swingLowJustConfirmed and array.size(swingLowBars) > 0 and array.get(swingLowBars, 0) > eventBar
+    refLow           := array.get(swingLowPrices, 0)
+    refLowBar        := array.get(swingLowBars,   0)
+    waitingForRefLow := false
+    if showStructHL
+        refLowLbl := label.new(refLowBar, refLow, "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+
+bool   eventFired = false
+bool   goingUp    = false
+string eventType  = ""
+
+if trend != "none"
+    if not na(refHigh) and close > refHigh
+        eventFired := true
+        goingUp    := true
+        eventType  := trend == "up" ? "BOS" : "CHoCH"
+    if not na(refLow) and close < refLow
+        eventFired := true
+        goingUp    := false
+        eventType  := trend == "down" ? "BOS" : "CHoCH"
+
+if eventFired
+    col          = eventType == "BOS" ? colBOS : (goingUp ? colUp : colDown)
+    float lvl    = goingUp ? refHigh : refLow
+    int   lvlBar = goingUp ? refHighBar : refLowBar
+    int   midBar = int(math.avg(lvlBar, bar_index))
+
+    line.new(lvlBar, lvl, bar_index, lvl, color = col, width = 2, style = line.style_dotted)
+    label.new(midBar, lvl, eventType, color = color.new(color.white, 100), textcolor = col, size = size.small, style = label.style_none)
+
+    eventBar := bar_index
+
+    if goingUp
+        trend := "up"
+        float scanLow    = low
+        int   scanLowBar = bar_index
+        for i = 0 to bar_index - refHighBar
+            if low[i] < scanLow
+                scanLow    := low[i]
+                scanLowBar := bar_index - i
+        refLow    := scanLow
+        refLowBar := scanLowBar
+        obBaseBar := scanLowBar
+        if showStructHL
+            refLowLbl := label.new(refLowBar, refLow, "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+        refHigh           := na
+        refHighBar        := -1
+        refHighLbl        := na
+        waitingForRefHigh := true
+        waitingForRefLow  := false
+    else
+        trend := "down"
+        float scanHigh    = high
+        int   scanHighBar = bar_index
+        for i = 0 to bar_index - refLowBar
+            if high[i] > scanHigh
+                scanHigh    := high[i]
+                scanHighBar := bar_index - i
+        refHigh    := scanHigh
+        refHighBar := scanHighBar
+        obBaseBar  := scanHighBar
+        if showStructHL
+            refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+        refLow            := na
+        refLowBar         := -1
+        refLowLbl         := na
+        waitingForRefLow  := true
+        waitingForRefHigh := false
+
+bgcolor(showTrendBg ? (trend == "up" ? color.new(colUp, 92) : trend == "down" ? color.new(colDown, 92) : na) : na)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 3 — Fair Value Gaps (FVG)
+//   Bullish: high[2] < low[0] AND close[1] > high[2]
+//   Bearish: low[2]  > high[0] AND close[1] < low[2]
+// ══════════════════════════════════════════════════════════════════
+
+showFvgBull  = input.bool(false, "Show bullish FVG",                group = "Fair Value Gaps")
+showFvgBear  = input.bool(false, "Show bearish FVG",                group = "Fair Value Gaps")
+colFvgBull   = input.color(color.new(color.green, 80), "Bullish FVG", group = "Fair Value Gaps")
+colFvgBear   = input.color(color.new(color.red,   80), "Bearish FVG", group = "Fair Value Gaps")
+colFvgMit    = input.color(color.new(color.gray,  85), "Mitigated FVG", group = "Fair Value Gaps")
+maxFvg       = input.int(20, "Max FVG boxes", minval = 1, group = "Fair Value Gaps")
+fvgExtend    = input.int(10, "FVG box extend (bars)", minval = 0, group = "Fair Value Gaps")
+hideFvgMitig = input.bool(false, "Hide mitigated FVGs", group = "Fair Value Gaps")
+fvgUseThresh = input.bool(false, "Filter by displacement strength", group = "Fair Value Gaps")
+
+type fvg
+    float top
+    float bottom
+    int   bias
+    box   bx
+    bool  mitigated = false
+
+var fvg[] fvgs = array.new<fvg>()
+
+trimFVG() =>
+    while array.size(fvgs) > maxFvg
+        old = array.shift(fvgs)
+        box.delete(old.bx)
+
+deltaPct  = (close[1] - open[1]) / open[1]
+threshold = fvgUseThresh ? ta.cum(math.abs(deltaPct)) / bar_index * 2 : 0.0
+
+bullFVG = high[2] < low[0] and close[1] > high[2] and (not fvgUseThresh or  deltaPct > threshold)
+bearFVG = low[2]  > high[0] and close[1] < low[2]  and (not fvgUseThresh or -deltaPct > threshold)
+
+if bullFVG and showFvgBull
+    b = box.new(bar_index[2], low[0], bar_index + fvgExtend, high[2], border_color = color.new(color.green, 40), border_width = 1, bgcolor = colFvgBull)
+    array.push(fvgs, fvg.new(low[0], high[2], 1, b))
+    trimFVG()
+
+if bearFVG and showFvgBear
+    b = box.new(bar_index[2], low[2], bar_index + fvgExtend, high[0], border_color = color.new(color.red, 40), border_width = 1, bgcolor = colFvgBear)
+    array.push(fvgs, fvg.new(low[2], high[0], -1, b))
+    trimFVG()
+
+if array.size(fvgs) > 0
+    for i = array.size(fvgs) - 1 to 0
+        f = array.get(fvgs, i)
+        if not f.mitigated
+            box.set_right(f.bx, bar_index + fvgExtend)
+            touched = f.bias == 1 ? low < f.top : high > f.bottom
+            if touched
+                f.mitigated := true
+                if hideFvgMitig
+                    box.delete(f.bx)
+                    array.remove(fvgs, i)
+                else
+                    box.set_bgcolor(f.bx, colFvgMit)
+                    box.set_border_color(f.bx, color.new(color.gray, 60))
+                    box.set_right(f.bx, bar_index)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 4 — Order Blocks (OB)
+// ══════════════════════════════════════════════════════════════════
+
+showAplus   = input.bool(true,  "Show A+ order blocks",       group = "Order Blocks")
+showRegular = input.bool(true,  "Show regular order blocks",  group = "Order Blocks")
+colBull     = input.color(color.new(color.blue,   80), "Bullish OB fill",   group = "Order Blocks")
+colBullBrd  = input.color(color.new(color.blue,   30), "Bullish OB border", group = "Order Blocks")
+colBear     = input.color(color.new(color.orange, 80), "Bearish OB fill",   group = "Order Blocks")
+colBearBrd  = input.color(color.new(color.orange, 30), "Bearish OB border", group = "Order Blocks")
+colTap      = input.color(color.orange,               "Tapped outline",     group = "Order Blocks")
+colBroken   = input.color(color.new(color.gray, 85),  "Broken OB",          group = "Order Blocks")
+maxOBs      = input.int(12, "Max OB boxes",         minval = 1, group = "Order Blocks")
+obExtend    = input.int(10, "OB box extend (bars)", minval = 0, group = "Order Blocks")
+obLookback  = input.int(50, "OB liquidity search lookback (bars)", minval = 5, group = "Order Blocks")
+hideBroken  = input.bool(false, "Hide broken OBs",  group = "Order Blocks")
+dbgOB       = input.bool(false, "DEBUG: outline every break's OB + A+/REG tag + leg FVG", group = "Order Blocks")
+
+type ob
+    float top
+    float bottom
+    int   bias
+    bool  aplus
+    box   bx
+    int   baseBar = -1
+    bool  tapped  = false
+    bool  broken  = false
+
+var ob[] obs = array.new<ob>()
+
+trimOB() =>
+    while array.size(obs) > maxOBs
+        old = array.shift(obs)
+        box.delete(old.bx)
+
+makeOB(int b, bool up) =>
+    if b < bar_index and bar_index - b <= obLookback
+        int   candOff = bar_index - b
+        bool  found   = false
+        int   dispOff = -1
+        float ft = na
+        float fb = na
+        int   fl = -1
+        int   fr = -1
+        for o = candOff - 1 to 0
+            if not found
+                bool gap2 = up ? high[o + 1] < low[o] : low[o + 1] > high[o]
+                bool fvg3 = false
+                if o + 2 <= candOff
+                    fvg3 := up ? high[o + 2] < low[o] : low[o + 2] > high[o]
+                if gap2
+                    found   := true
+                    dispOff := o + 1
+                    ft := up ? low[o] : low[o + 1]
+                    fb := up ? high[o + 1] : high[o]
+                    fl := bar_index - (o + 1)
+                    fr := bar_index - o
+                else if fvg3
+                    found   := true
+                    dispOff := o + 2
+                    ft := up ? low[o] : low[o + 2]
+                    fb := up ? high[o + 2] : high[o]
+                    fl := bar_index - (o + 2)
+                    fr := bar_index - o
+        if found
+            int obCandOff = dispOff
+            for x = dispOff to math.min(bar_index, candOff + 5)
+                if (up ? close[x] < open[x] : close[x] > open[x])
+                    obCandOff := x
+                    break
+            int   obBar = bar_index - obCandOff
+            float ot    = high[obCandOff]
+            float obb   = low[obCandOff]
+            bool overlap = false
+            if array.size(obs) > 0
+                for i = 0 to array.size(obs) - 1
+                    ob ex = array.get(obs, i)
+                    if not ex.broken and ex.bias == (up ? 1 : -1) and obb <= ex.top and ex.bottom <= ot
+                        overlap := true
+                        break
+            if not overlap
+                bool  liq = false
+                if up
+                    if array.size(minorLowPrices) > 0
+                        for kk = 0 to array.size(minorLowPrices) - 1
+                            if array.get(minorLowBars, kk) < obBar
+                                liq := obb < array.get(minorLowPrices, kk)
+                                break
+                else
+                    if array.size(minorHighPrices) > 0
+                        for kk = 0 to array.size(minorHighPrices) - 1
+                            if array.get(minorHighBars, kk) < obBar
+                                liq := ot > array.get(minorHighPrices, kk)
+                                break
+                bool  show = liq ? showAplus : showRegular
+                color bc   = show ? (up ? colBull : colBear)       : color(na)
+                color brc  = show ? (up ? colBullBrd : colBearBrd) : color(na)
+                box   bxx  = box.new(obBar, ot, bar_index + obExtend, obb, border_color = brc, border_width = liq ? 2 : 1, bgcolor = bc)
+                array.push(obs, ob.new(ot, obb, up ? 1 : -1, liq, bxx, obBar))
+                trimOB()
+                if dbgOB
+                    box.new(obBar, ot, bar_index, obb, border_color = up ? color.green : color.red, border_width = 1, border_style = line.style_dashed, bgcolor = color(na))
+                    box.new(fl, ft, fr, fb, border_color = color.new(color.blue, 0), border_width = 1, bgcolor = color.new(color.blue, 80))
+                    string tg = (liq ? "A+" : "REG") + " liq" + (liq ? "✓" : "✗") + " fvg✓"
+                    label.new(obBar, up ? obb : ot, tg, color = color.new(color.black, 100), textcolor = liq ? color.green : color.gray, style = up ? label.style_label_up : label.style_label_down, size = size.small)
+
+if eventFired
+    if goingUp
+        if array.size(minorLowBars) > 0
+            for k = 0 to array.size(minorLowBars) - 1
+                makeOB(array.get(minorLowBars, k), true)
+    else
+        if array.size(minorHighBars) > 0
+            for k = 0 to array.size(minorHighBars) - 1
+                makeOB(array.get(minorHighBars, k), false)
+
+if array.size(obs) > 0
+    for i = array.size(obs) - 1 to 0
+        o = array.get(obs, i)
+        if not o.broken
+            box.set_right(o.bx, bar_index + obExtend)
+            if not o.tapped and high >= o.bottom and low <= o.top
+                o.tapped := true
+                box.set_border_color(o.bx, colTap)
+                box.set_border_width(o.bx, 2)
+            bool brk = o.bias == 1 ? close < o.bottom : close > o.top
+            if brk
+                o.broken := true
+                if hideBroken
+                    box.delete(o.bx)
+                    array.remove(obs, i)
+                else
+                    box.set_bgcolor(o.bx, colBroken)
+                    box.set_border_color(o.bx, color.new(color.gray, 60))
+                    box.set_right(o.bx, bar_index)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 5.1 — Swing Liquidity (BSL / SSL)  +  5.3 sweep markers
+// ══════════════════════════════════════════════════════════════════
+
+showBSL    = input.bool(true,  "Show buy-side liquidity (BSL)",  group = "Liquidity")
+showSSL    = input.bool(true,  "Show sell-side liquidity (SSL)", group = "Liquidity")
+showLiqLbl = input.bool(true,  "Show BSL/SSL text labels",       group = "Liquidity")
+colBSL    = input.color(color.new(color.teal,   0), "BSL line",        group = "Liquidity")
+colSSL    = input.color(color.new(color.maroon, 0), "SSL line",        group = "Liquidity")
+colTaken  = input.color(color.new(color.gray,  40), "Taken liquidity", group = "Liquidity")
+maxLiq    = input.int(12, "Max liquidity lines", minval = 1, group = "Liquidity")
+hideTaken = input.bool(false, "Hide taken liquidity", group = "Liquidity")
+
+showSweep = input.bool(true, "Mark liquidity sweeps", group = "Sweeps")
+colSweep  = input.color(color.new(color.orange, 0), "Sweep marker", group = "Sweeps")
+sweepTag  = input.string("x", "Sweep marker text", options = ["x", "SWEEP", "✕"], group = "Sweeps")
+
+drawSweep(int bias, float wick) =>
+    if showSweep
+        label.new(bar_index, wick, sweepTag, color = color(na), textcolor = colSweep, style = bias == 1 ? label.style_label_down : label.style_label_up, size = size.tiny)
+
+type liq
+    float level
+    int   bias
+    line  ln
+    label lb = na
+    bool  taken = false
+
+var liq[] liqs = array.new<liq>()
+
+trimLiq() =>
+    while array.size(liqs) > maxLiq
+        old = array.shift(liqs)
+        line.delete(old.ln)
+        label.delete(old.lb)
+
+if swingHighJustConfirmed and showBSL and array.size(swingHighPrices) > 0
+    lvl = array.get(swingHighPrices, 0)
+    bar = array.get(swingHighBars,   0)
+    ln  = line.new(bar, lvl, bar_index, lvl, color = colBSL, width = 1)
+    lb  = showLiqLbl ? label.new(bar_index, lvl, "BSL", color = color(na), textcolor = colBSL, style = label.style_label_left, size = size.tiny) : na
+    array.push(liqs, liq.new(lvl, 1, ln, lb))
+    trimLiq()
+
+if swingLowJustConfirmed and showSSL and array.size(swingLowPrices) > 0
+    lvl = array.get(swingLowPrices, 0)
+    bar = array.get(swingLowBars,   0)
+    ln  = line.new(bar, lvl, bar_index, lvl, color = colSSL, width = 1)
+    lb  = showLiqLbl ? label.new(bar_index, lvl, "SSL", color = color(na), textcolor = colSSL, style = label.style_label_left, size = size.tiny) : na
+    array.push(liqs, liq.new(lvl, -1, ln, lb))
+    trimLiq()
+
+if array.size(liqs) > 0
+    for i = array.size(liqs) - 1 to 0
+        l = array.get(liqs, i)
+        if not l.taken
+            line.set_x2(l.ln, bar_index)
+            if not na(l.lb)
+                label.set_x(l.lb, bar_index)
+            bool taken = l.bias == 1 ? high > l.level : low < l.level
+            if taken
+                l.taken := true
+                bool sweep = l.bias == 1 ? close < l.level : close > l.level
+                if sweep
+                    drawSweep(l.bias, l.bias == 1 ? high : low)
+                if hideTaken
+                    line.delete(l.ln)
+                    label.delete(l.lb)
+                    array.remove(liqs, i)
+                else
+                    line.set_color(l.ln, colTaken)
+                    line.set_style(l.ln, line.style_dotted)
+                    line.set_x2(l.ln, bar_index)
+                    if not na(l.lb)
+                        label.set_textcolor(l.lb, colTaken)
+                        label.set_x(l.lb, bar_index)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 5.2 — Equal Highs / Lows (EQH / EQL)
+// ══════════════════════════════════════════════════════════════════
+
+showEQ   = input.bool(true,  "Show equal highs/lows (EQH/EQL)", group = "Equal H/L")
+eqThresh = input.float(0.1,  "Equal threshold (× ATR)", minval = 0, maxval = 0.5, step = 0.05, group = "Equal H/L")
+eqPivLen = input.int(3,      "EQ pivot length (bars each side)", minval = 1, group = "Equal H/L")
+atrLen   = input.int(200,    "ATR length", minval = 1, group = "Equal H/L")
+colEQH   = input.color(color.new(color.teal,   0), "EQH", group = "Equal H/L")
+colEQL   = input.color(color.new(color.maroon, 0), "EQL", group = "Equal H/L")
+maxEQ    = input.int(8, "Max EQH/EQL lines", minval = 1, group = "Equal H/L")
+
+atr = ta.atr(atrLen)
+
+type eql
+    float level
+    int   bias
+    line  ln
+    label lb
+    bool  taken = false
+
+var eql[] eqs = array.new<eql>()
+
+trimEQ() =>
+    while array.size(eqs) > maxEQ
+        old = array.shift(eqs)
+        line.delete(old.ln)
+        label.delete(old.lb)
+
+eqPH = ta.pivothigh(high, eqPivLen, eqPivLen)
+eqPL = ta.pivotlow(low,   eqPivLen, eqPivLen)
+
+var float lastEqHigh    = na
+var int   lastEqHighBar = na
+var float lastEqLow     = na
+var int   lastEqLowBar  = na
+
+if showEQ and not na(eqPH)
+    pBar = bar_index - eqPivLen
+    if not na(lastEqHigh) and math.abs(eqPH - lastEqHigh) < eqThresh * atr
+        lvl = math.max(eqPH, lastEqHigh)
+        mid = math.round(0.5 * (lastEqHighBar + pBar))
+        ln  = line.new(lastEqHighBar, lvl, bar_index, lvl, color = colEQH, width = 1, style = line.style_dotted)
+        lb  = label.new(mid, lvl, "EQH", color = color(na), textcolor = colEQH, style = label.style_label_down, size = size.tiny)
+        array.push(eqs, eql.new(lvl, 1, ln, lb))
+        trimEQ()
+    lastEqHigh    := eqPH
+    lastEqHighBar := pBar
+
+if showEQ and not na(eqPL)
+    pBar = bar_index - eqPivLen
+    if not na(lastEqLow) and math.abs(eqPL - lastEqLow) < eqThresh * atr
+        lvl = math.min(eqPL, lastEqLow)
+        mid = math.round(0.5 * (lastEqLowBar + pBar))
+        ln  = line.new(lastEqLowBar, lvl, bar_index, lvl, color = colEQL, width = 1, style = line.style_dotted)
+        lb  = label.new(mid, lvl, "EQL", color = color(na), textcolor = colEQL, style = label.style_label_up, size = size.tiny)
+        array.push(eqs, eql.new(lvl, -1, ln, lb))
+        trimEQ()
+    lastEqLow    := eqPL
+    lastEqLowBar := pBar
+
+if array.size(eqs) > 0
+    for i = array.size(eqs) - 1 to 0
+        e = array.get(eqs, i)
+        if not e.taken
+            line.set_x2(e.ln, bar_index)
+            bool taken = e.bias == 1 ? high > e.level : low < e.level
+            if taken
+                e.taken := true
+                bool sweep = e.bias == 1 ? close < e.level : close > e.level
+                if sweep
+                    drawSweep(e.bias, e.bias == 1 ? high : low)
+                if hideTaken
+                    line.delete(e.ln)
+                    label.delete(e.lb)
+                    array.remove(eqs, i)
+                else
+                    line.set_color(e.ln, colTaken)
+                    label.set_textcolor(e.lb, colTaken)
+                    line.set_x2(e.ln, bar_index)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 5.4 — Session / Period Levels (PDH/PDL, PWH/PWL, Session, OR)
+// ══════════════════════════════════════════════════════════════════
+
+grpS     = "Session Levels"
+showPDHL = input.bool(true,  "Prev Day High/Low (PDH/PDL)",  group = grpS)
+showPWHL = input.bool(true,  "Prev Week High/Low (PWH/PWL)", group = grpS)
+showSess = input.bool(true,  "Today's session High/Low",     group = grpS)
+showOR   = input.bool(true,  "Opening range",                group = grpS)
+orMins   = input.int(15,     "Opening range (minutes)", minval = 1, group = grpS)
+sessIn   = input.session("0915-1530", "Session window (intraday)", group = grpS)
+sessTz   = input.string("Asia/Kolkata", "Session timezone", group = grpS)
+colPD    = input.color(color.new(color.blue,   0), "PDH/PDL",       group = grpS)
+colPW    = input.color(color.new(color.purple, 0), "PWH/PWL",       group = grpS)
+colSe    = input.color(color.new(color.gray,   0), "Session H/L",   group = grpS)
+colORc   = input.color(color.new(color.orange, 0), "Opening range", group = grpS)
+
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[pwh, pwl] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+
+isNewDay  = timeframe.change("D")
+isNewWeek = timeframe.change("W")
+inSess    = timeframe.isintraday and not na(time(timeframe.period, sessIn, sessTz))
+newSess   = inSess and not inSess[1]
+
+type plvl
+    line  ln
+    label lb
+    float level
+    int   bias
+    bool  taken = false
+
+mkLevel(plvl prev, float lvl, int bias, color col, string tag, int startBar) =>
+    if not na(prev)
+        line.delete(prev.ln)
+        label.delete(prev.lb)
+    line  ln = line.new(startBar, lvl, bar_index, lvl, color = col, width = 1)
+    label lb = label.new(bar_index, lvl, tag, color = color(na), textcolor = col, style = label.style_label_left, size = size.tiny)
+    plvl.new(ln, lb, lvl, bias)
+
+updLevel(plvl p, color takenCol) =>
+    if not na(p) and not p.taken
+        line.set_x2(p.ln, bar_index)
+        label.set_x(p.lb, bar_index)
+        bool tk = p.bias == 1 ? high > p.level : low < p.level
+        if tk
+            p.taken := true
+            bool sweep = p.bias == 1 ? close < p.level : close > p.level
+            if sweep
+                drawSweep(p.bias, p.bias == 1 ? high : low)
+            line.set_color(p.ln, takenCol)
+            line.set_style(p.ln, line.style_dotted)
+            label.set_textcolor(p.lb, takenCol)
+
+var plvl pdHi = na
+var plvl pdLo = na
+var plvl pwHi = na
+var plvl pwLo = na
+var plvl orHi = na
+var plvl orLo = na
+
+if showPDHL and isNewDay and not na(pdh)
+    pdHi := mkLevel(pdHi, pdh,  1, colPD, "PDH", bar_index)
+    pdLo := mkLevel(pdLo, pdl, -1, colPD, "PDL", bar_index)
+updLevel(pdHi, colTaken)
+updLevel(pdLo, colTaken)
+
+if showPWHL and isNewWeek and not na(pwh)
+    pwHi := mkLevel(pwHi, pwh,  1, colPW, "PWH", bar_index)
+    pwLo := mkLevel(pwLo, pwl, -1, colPW, "PWL", bar_index)
+updLevel(pwHi, colTaken)
+updLevel(pwLo, colTaken)
+
+var float orH       = na
+var float orL       = na
+var int   orStartBr = na
+var int   sessStMs  = na
+var bool  orDone    = false
+
+if newSess
+    orH       := high
+    orL       := low
+    orStartBr := bar_index
+    sessStMs  := time
+    orDone    := false
+else if inSess and not orDone and not na(orH) and (time - sessStMs) < orMins * 60000
+    orH := math.max(orH, high)
+    orL := math.min(orL, low)
+
+if showOR and inSess and not orDone and not na(orH) and (time - sessStMs) >= orMins * 60000
+    orDone := true
+    orHi   := mkLevel(orHi, orH,  1, colORc, "ORH", orStartBr)
+    orLo   := mkLevel(orLo, orL, -1, colORc, "ORL", orStartBr)
+updLevel(orHi, colTaken)
+updLevel(orLo, colTaken)
+
+var line  seHiLn = na
+var line  seLoLn = na
+var label seHiLb = na
+var label seLoLb = na
+var float seHi   = na
+var float seLo   = na
+
+if newSess and showSess
+    line.delete(seHiLn)
+    line.delete(seLoLn)
+    label.delete(seHiLb)
+    label.delete(seLoLb)
+    seHi   := high
+    seLo   := low
+    seHiLn := line.new(bar_index, seHi, bar_index, seHi, color = colSe, width = 1, style = line.style_dashed)
+    seLoLn := line.new(bar_index, seLo, bar_index, seLo, color = colSe, width = 1, style = line.style_dashed)
+    seHiLb := label.new(bar_index, seHi, "H", color = color(na), textcolor = colSe, style = label.style_label_left, size = size.tiny)
+    seLoLb := label.new(bar_index, seLo, "L", color = color(na), textcolor = colSe, style = label.style_label_left, size = size.tiny)
+else if inSess and showSess and not na(seHi)
+    seHi := math.max(seHi, high)
+    seLo := math.min(seLo, low)
+    line.set_xy2(seHiLn, bar_index, seHi)
+    line.set_y1(seHiLn, seHi)
+    line.set_xy2(seLoLn, bar_index, seLo)
+    line.set_y1(seLoLn, seLo)
+    label.set_xy(seHiLb, bar_index, seHi)
+    label.set_xy(seLoLb, bar_index, seLo)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 6 — Premium / Discount Zones   (Option A range — HIDDEN by default)
+// ══════════════════════════════════════════════════════════════════
+
+grpPD    = "Premium / Discount"
+showPD   = input.bool(false, "Show premium/discount zones",                group = grpPD)
+pdStyle  = input.string("Full halves", "Zone style", options = ["Full halves", "Thin bands (Lux)"], group = grpPD)
+showEqL  = input.bool(false, "Show equilibrium (line / band)",             group = grpPD)
+showOTE  = input.bool(false, "Show OTE zones (0.62–0.79)",                 group = grpPD)
+hlActive = input.bool(false, "Highlight only actionable half (per trend)", group = grpPD)
+colPrem  = input.color(color.new(color.red,   85), "Premium fill",   group = grpPD)
+colDisc  = input.color(color.new(color.green, 85), "Discount fill",  group = grpPD)
+colEqL   = input.color(color.new(color.gray,   0), "Equilibrium",    group = grpPD)
+colOTEc  = input.color(color.new(color.orange,75), "OTE fill",       group = grpPD)
+dimTrans = input.int(96, "Dimmed-half transparency", minval = 0, maxval = 100, group = grpPD)
+
+var float rngHigh    = na
+var int   rngHighBar = na
+var float rngLow     = na
+var int   rngLowBar  = na
+
+if not na(refHigh) and not na(refLow)
+    rngHigh    := refHigh
+    rngHighBar := refHighBar
+    rngLow     := refLow
+    rngLowBar  := refLowBar
+
+var box  premBox = na
+var box  discBox = na
+var line eqLine  = na
+var box  eqBox   = na
+var box  oteLoB  = na
+var box  oteHiB  = na
+
+if not na(rngHigh) and not na(rngLow) and rngHigh > rngLow
+    float eq      = math.avg(rngHigh, rngLow)
+    float rng     = rngHigh - rngLow
+    int   leftBar = math.min(rngHighBar, rngLowBar)
+    bool  dimPrem = hlActive and trend == "up"
+    bool  dimDisc = hlActive and trend == "down"
+    color premCol = dimPrem ? color.new(colPrem, dimTrans) : colPrem
+    color discCol = dimDisc ? color.new(colDisc, dimTrans) : colDisc
+    bool  thin    = pdStyle == "Thin bands (Lux)"
+    float premTop = rngHigh
+    float premBot = thin ? 0.95 * rngHigh + 0.05 * rngLow : eq
+    float discTop = thin ? 0.95 * rngLow  + 0.05 * rngHigh : eq
+    float discBot = rngLow
+
+    if showPD
+        if na(premBox)
+            premBox := box.new(leftBar, premTop, bar_index, premBot, border_color = na, bgcolor = premCol)
+            discBox := box.new(leftBar, discTop, bar_index, discBot, border_color = na, bgcolor = discCol)
+        else
+            box.set_lefttop(premBox, leftBar, premTop)
+            box.set_rightbottom(premBox, bar_index, premBot)
+            box.set_bgcolor(premBox, premCol)
+            box.set_lefttop(discBox, leftBar, discTop)
+            box.set_rightbottom(discBox, bar_index, discBot)
+            box.set_bgcolor(discBox, discCol)
+
+    if showEqL
+        if thin
+            float eqT = 0.525 * rngHigh + 0.475 * rngLow
+            float eqB = 0.525 * rngLow  + 0.475 * rngHigh
+            if na(eqBox)
+                eqBox := box.new(leftBar, eqT, bar_index, eqB, border_color = na, bgcolor = color.new(colEqL, 80))
+            else
+                box.set_lefttop(eqBox, leftBar, eqT)
+                box.set_rightbottom(eqBox, bar_index, eqB)
+        else
+            if na(eqLine)
+                eqLine := line.new(leftBar, eq, bar_index, eq, color = colEqL, style = line.style_dashed, width = 1)
+            else
+                line.set_xy1(eqLine, leftBar, eq)
+                line.set_xy2(eqLine, bar_index, eq)
+
+    if showOTE
+        float loteB = rngLow + 0.21 * rng
+        float loteT = rngLow + 0.38 * rng
+        float poteB = rngLow + 0.62 * rng
+        float poteT = rngLow + 0.79 * rng
+        if na(oteLoB)
+            oteLoB := box.new(leftBar, loteT, bar_index, loteB, border_color = na, bgcolor = colOTEc)
+            oteHiB := box.new(leftBar, poteT, bar_index, poteB, border_color = na, bgcolor = colOTEc)
+        else
+            box.set_lefttop(oteLoB, leftBar, loteT)
+            box.set_rightbottom(oteLoB, bar_index, loteB)
+            box.set_lefttop(oteHiB, leftBar, poteT)
+            box.set_rightbottom(oteHiB, bar_index, poteB)
