@@ -4,6 +4,12 @@ indicator("Super Trend Multi Time Frame Long", overlay=true)
 atrPeriod = input.int(10,    "ATR Length", minval = 1)
 factor    = input.float(3.0, "Factor",     minval = 0.01, step = 0.01)
 
+// Daily square-off (IST)
+sqHour = input.int(15, "Square-off Hour",   minval = 0, maxval = 23, group = "Session")
+sqMin  = input.int(26, "Square-off Minute", minval = 0, maxval = 59, group = "Session")
+afterSquareOff = (hour(time, "Asia/Kolkata") > sqHour) or
+                 (hour(time, "Asia/Kolkata") == sqHour and minute(time, "Asia/Kolkata") >= sqMin)
+
 higherTimeFrame = switch timeframe.period
     "1"  => "3"
     "2"  => "5"
@@ -46,8 +52,8 @@ if ta.change(time("D")) != 0
 crossL = ta.crossover(close, l_supertrend)
 crossH = ta.crossover(close, h_supertrend)
 
-// Exit check first
-longExit = longC != 0 and (close < l_supertrend or close < h_supertrend) and barstate.isconfirmed
+// Exit check first — supertrend flip OR daily square-off at 3:26 PM
+longExit = longC != 0 and (((close < l_supertrend or close < h_supertrend) and barstate.isconfirmed) or afterSquareOff)
 if longExit
     longC             := 0
     pendingEntry      := false
@@ -59,7 +65,7 @@ if pendingEntry and (close < l_supertrend or close < h_supertrend)
     pendingEntryLevel := na
 
 // Crossover signal: big candle waits for low + threshold; normal candle waits for midpoint
-crossoverSignal = longC == 0 and ((crossL and close > h_supertrend) or (crossH and close > l_supertrend)) and barstate.isconfirmed
+crossoverSignal = longC == 0 and ((crossL and close > h_supertrend) or (crossH and close > l_supertrend)) and barstate.isconfirmed and not afterSquareOff
 
 isBigCandle = (high - low) > bigCandleThreshold
 

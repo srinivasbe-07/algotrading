@@ -1,0 +1,161 @@
+//@version=6
+indicator("Bullish Candle Pattern Entry + Stepped Trail", overlay=true)
+
+// ════════════════════════════════════════════════════════════════════════════
+// PURPOSE
+//   Bullish-only. Detect a hammer / bullish-engulfing / doji candle, then enter
+//   long when price crosses ABOVE that candle's high. One position at a time.
+//   Stop loss ratchets up in two fixed steps, then is left.
+//
+//   Runs on the OPTION chart (premium points), e.g.
+//     Nifty  option : NIFTY260630C24000
+//     Sensex option : BSX260625C76900
+//
+//   Alerts: create ONE alert on "Any alert() function call" to get the dynamic
+//   webhook messages, or use the alertcondition entries below.
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── INPUTS ──────────────────────────────────────────────────────────────────
+showDebug    = input.bool(true, "Show debug overlays", group="Debug")
+targetSensex = input.float(70.0, "Sensex Target (+pts, 0=off)", step=0.1, group="Exit")
+targetNifty  = input.float(31.0, "Nifty Target (+pts, 0=off)",  step=0.1, group="Exit")
+
+// Trade only when the pattern candle is inside this price area
+useArea  = input.bool(true, "Only trade inside price area", group="Entry Area")
+areaHigh = input.float(0.0, "Area High", step=0.1, group="Entry Area")
+areaLow  = input.float(0.0, "Area Low",  step=0.1, group="Entry Area")
+
+// ─── INSTRUMENT DETECTION ────────────────────────────────────────────────────
+symbol   = syminfo.ticker
+isSensex = str.contains(symbol, "BSX") or str.contains(symbol, "SENSEX")
+isNifty  = str.contains(symbol, "NIFTY") and not str.contains(symbol, "BANKNIFTY")
+
+// Per-instrument SL / trail parameters (in premium points)
+initialSL = isSensex ? 35.0 : 15.0   // initial stop distance below entry
+trig1     = isSensex ? 22.0 : 10.0   // profit that activates step 1
+raise1    = isSensex ? 25.0 : 12.0   // step 1 raises stop by this much
+trig2     = isSensex ? 44.0 : 20.0   // profit that activates step 2 (final)
+lock2     = isSensex ? 5.0  : 2.0    // step 2 sets stop to cost + this, then leave it
+
+entryMsg = input.string("entry", "Entry Alert Message", group="Alerts")  // user-defined
+exitMsg  = input.string("exit",  "Exit Alert Message",  group="Alerts")  // user-defined
+
+targetPts = isSensex ? targetSensex : targetNifty   // target = entry + targetPts (0 = off)
+
+// ─── SESSION / DAILY REFRESH ─────────────────────────────────────────────────
+sqHour = input.int(15, "Square-off Hour",   minval=0, maxval=23, group="Session")
+sqMin  = input.int(27, "Square-off Minute", minval=0, maxval=59, group="Session")
+
+tHour          = hour(time, "Asia/Kolkata")
+tMin           = minute(time, "Asia/Kolkata")
+afterSquareOff = (tHour > sqHour) or (tHour == sqHour and tMin >= sqMin)
+isNewDay       = ta.change(time("D")) != 0
+
+// ─── CANDLE PATTERNS ─────────────────────────────────────────────────────────
+body        = math.abs(close - open)
+low_shadow  = math.min(open, close) - low
+up_shadow   = high - math.max(open, close)
+total_range = high - low
+
+bull_engulf = close > open and close[1] < open[1] and open < close[1] and close > open[1]
+is_hammer   = body > 0 and low_shadow >= body * 1.5 and up_shadow <= body * 0.5
+is_doji     = total_range > 0 and body <= total_range * 0.1 and
+              (close + open) / 2 >= low  + total_range * 0.4 and
+              (close + open) / 2 <= high - total_range * 0.4
+
+patternCandle = bull_engulf or is_hammer or is_doji
+
+// Pattern candle colors (same scheme as CandlePatterns.pine; doji has priority)
+color patColor = na
+if is_doji
+    patColor := color.white        // White  = doji
+else if is_hammer
+    patColor := color.purple       // Purple = hammer
+else if bull_engulf
+    patColor := color.blue         // Blue   = bullish engulfing
+barcolor(patColor, title="Pattern Candle Color")
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+var int   longC      = 0     // 0 = flat, 1 = in long
+var float entryPrice = na    // breakout level
+var float stopLevel  = na    // current stop
+var int   trailStage = 0     // 0 = initial, 1 = step1 done, 2 = final done
+var float armedLevel = na    // pattern candle's high to break for entry
+
+// ─── DAILY REFRESH: clear armed level & stage at the start of each day ───────
+if isNewDay and longC == 0
+    armedLevel := na
+    trailStage := 0
+
+// Entry zone filter: candle must overlap the area (no filter when useArea = false)
+// Normalize so the inputs work regardless of which box holds the higher value.
+zoneLow  = math.min(areaLow, areaHigh)
+zoneHigh = math.max(areaLow, areaHigh)
+inZone = not useArea or (high >= zoneLow and low <= zoneHigh)
+
+// ─── ARM ENTRY: LOWEST pattern-candle high in the zone (before square-off) ───
+// Keep the lowest high while waiting so a break above ANY in-zone pattern fires.
+if patternCandle and longC == 0 and barstate.isconfirmed and not afterSquareOff and inZone
+    armedLevel := na(armedLevel) ? high : math.min(armedLevel, high)
+
+// ─── ENTRY: price crosses above the armed pattern high (before square-off) ───
+longEntry = longC == 0 and not na(armedLevel) and high > armedLevel and not afterSquareOff
+
+if longEntry
+    entryPrice := armedLevel
+    stopLevel  := entryPrice - initialSL
+    trailStage := 0
+    longC      := 1
+    armedLevel := na
+    alert(entryMsg, alert.freq_once_per_bar)
+    if showDebug
+        label.new(bar_index, low, "Long @ " + str.tostring(math.round(entryPrice, 2)) +
+                  "\nSL " + str.tostring(math.round(stopLevel, 2)),
+                  color=color.green, textcolor=color.white,
+                  style=label.style_label_up, size=size.small)
+
+// ─── TRAIL: ratchet the stop up in two fixed steps, then leave it ────────────
+// Evaluate against the bar high so a milestone reached intrabar moves the stop.
+if longC != 0
+    profit = high - entryPrice
+    if trailStage < 2 and profit >= trig2
+        stopLevel  := entryPrice + lock2          // final: cost + lock2
+        trailStage := 2
+    else if trailStage < 1 and profit >= trig1
+        stopLevel  := entryPrice - initialSL + raise1   // step1: raise by raise1
+        trailStage := 1
+
+// ─── EXIT: target hit OR stop hit OR daily square-off at 3:27 PM ─────────────
+targetExit = longC != 0 and targetPts > 0 and high >= entryPrice + targetPts
+stopExit   = longC != 0 and not na(stopLevel) and low <= stopLevel
+timeExit   = longC != 0 and afterSquareOff
+longExit   = targetExit or stopExit or timeExit
+
+if longExit
+    alert(exitMsg, alert.freq_once_per_bar)
+    longC      := 0
+    entryPrice := na
+    stopLevel  := na
+    trailStage := 0
+
+// ─── VISUALS ─────────────────────────────────────────────────────────────────
+plot(longC != 0 ? stopLevel : na, "Stop Level", color=color.red,
+     style=plot.style_linebr, linewidth=2)
+plot(longC == 0 and not na(armedLevel) ? armedLevel : na, "Armed Entry Level",
+     color=color.orange, style=plot.style_linebr, linewidth=1)
+plot(longC != 0 and targetPts > 0 ? entryPrice + targetPts : na, "Target",
+     color=color.green, style=plot.style_linebr, linewidth=2)
+
+// Entry area band
+aH = plot(useArea ? areaHigh : na, "Area High", color=color.blue, linewidth=1)
+aL = plot(useArea ? areaLow  : na, "Area Low",  color=color.blue, linewidth=1)
+fill(aH, aL, color=color.new(color.blue, 90), title="Entry Area")
+
+plotshape(longEntry, title="Entry", location=location.belowbar,
+          style=shape.triangleup, color=color.green, size=size.small)
+plotshape(longExit, title="Exit", location=location.abovebar,
+          style=shape.xcross, color=color.red, size=size.small)
+
+// ─── ALERTS ──────────────────────────────────────────────────────────────────
+alertcondition(longEntry, title="Bullish Entry", message="Bullish pattern breakout — long entry")
+alertcondition(longExit,  title="Stop Exit",     message="Stop hit — long exit")

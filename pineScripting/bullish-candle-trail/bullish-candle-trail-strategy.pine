@@ -1,0 +1,133 @@
+//@version=6
+strategy("Bullish Candle Pattern Entry + Stepped Trail", overlay=true,
+         default_qty_type=strategy.fixed, pyramiding=0, calc_on_every_tick=true)
+
+// ════════════════════════════════════════════════════════════════════════════
+// PURPOSE
+//   Bullish-only. Detect a hammer / bullish-engulfing / doji candle, then enter
+//   long when price crosses ABOVE that candle's high. One position at a time.
+//   Stop loss ratchets up in two fixed steps, then is left.
+//   Daily refresh and end-of-day square-off are handled MANUALLY by the user.
+//
+//   Runs on the OPTION chart (premium points), e.g.
+//     Nifty  option : NIFTY260630C24000
+//     Sensex option : BSX260625C76900
+// ════════════════════════════════════════════════════════════════════════════
+
+// ─── INPUTS ──────────────────────────────────────────────────────────────────
+qty       = input.int(1, "Quantity (lots)", minval=1)
+showDebug = input.bool(true, "Show debug overlays", group="Debug")
+
+// Webhook messages (paste your two-alert IDs here)
+niftyEntryMsg  = input.string("NIFTY_ENTRY_ID",  "Nifty Entry Webhook",  group="Webhooks")
+niftyExitMsg   = input.string("NIFTY_EXIT_ID",   "Nifty Exit Webhook",   group="Webhooks")
+sensexEntryMsg = input.string("SENSEX_ENTRY_ID", "Sensex Entry Webhook", group="Webhooks")
+sensexExitMsg  = input.string("SENSEX_EXIT_ID",  "Sensex Exit Webhook",  group="Webhooks")
+
+// ─── INSTRUMENT DETECTION ────────────────────────────────────────────────────
+symbol   = syminfo.ticker
+isSensex = str.contains(symbol, "BSX") or str.contains(symbol, "SENSEX")
+isNifty  = str.contains(symbol, "NIFTY") and not str.contains(symbol, "BANKNIFTY")
+
+// Per-instrument SL / trail parameters (in premium points)
+initialSL = isSensex ? 35.0 : 15.0   // initial stop distance below entry
+trig1     = isSensex ? 22.0 : 10.0   // profit that activates step 1
+raise1    = isSensex ? 25.0 : 12.0   // step 1 raises stop by this much
+trig2     = isSensex ? 44.0 : 20.0   // profit that activates step 2 (final)
+lock2     = isSensex ? 5.0  : 2.0    // step 2 sets stop to cost + this, then leave it
+
+entryMsg = isSensex ? sensexEntryMsg : niftyEntryMsg
+exitMsg  = isSensex ? sensexExitMsg  : niftyExitMsg
+
+// ─── CANDLE PATTERNS ─────────────────────────────────────────────────────────
+body        = math.abs(close - open)
+low_shadow  = math.min(open, close) - low
+up_shadow   = high - math.max(open, close)
+total_range = high - low
+
+bull_engulf = close > open and close[1] < open[1] and open < close[1] and close > open[1]
+is_hammer   = low_shadow >= body * 2 and up_shadow <= body * 0.3
+is_doji     = total_range > 0 and body <= total_range * 0.1 and
+              (close + open) / 2 >= low  + total_range * 0.4 and
+              (close + open) / 2 <= high - total_range * 0.4
+
+patternCandle = bull_engulf or is_hammer or is_doji
+
+// ─── STATE (position tracked via the stop, no separate flag) ──────────────────
+var float entryPrice = na    // breakout level
+var float stopLevel  = na    // current stop; na = flat
+var int   trailStage = 0     // 0 = initial, 1 = step1 done, 2 = final done
+var float armedLevel = na    // pattern candle's high to break for entry
+
+inTrade = not na(stopLevel)  // we hold a position whenever a stop is set
+
+// ─── ARM ENTRY: latest confirmed pattern candle's high ───────────────────────
+if patternCandle and not inTrade and barstate.isconfirmed
+    armedLevel := high
+
+// ─── ENTRY: price crosses above the armed pattern high ───────────────────────
+longEntry = not inTrade and not na(armedLevel) and high > armedLevel
+
+if longEntry
+    entryPrice := armedLevel
+    stopLevel  := entryPrice - initialSL
+    trailStage := 0
+    armedLevel := na
+    if isNifty or isSensex
+        strategy.entry("Long", strategy.long, qty=qty, comment="entry", alert_message=entryMsg)
+    else
+        strategy.entry("Long", strategy.long, qty=qty, comment="entry")
+    if showDebug
+        label.new(bar_index, low, "Long @ " + str.tostring(math.round(entryPrice, 2)) +
+                  "\nSL " + str.tostring(math.round(stopLevel, 2)),
+                  color=color.green, textcolor=color.white,
+                  style=label.style_label_up, size=size.small)
+
+// ─── TRAIL: ratchet the stop up in two fixed steps, then leave it ────────────
+// Evaluate against the bar high so a milestone reached intrabar moves the stop.
+if inTrade
+    profit = high - entryPrice
+    if trailStage < 2 and profit >= trig2
+        stopLevel  := entryPrice + lock2          // final: cost + lock2
+        trailStage := 2
+        if showDebug
+            label.new(bar_index, high, "Step2 SL→" + str.tostring(math.round(stopLevel, 2)),
+                      color=color.blue, textcolor=color.white,
+                      style=label.style_label_down, size=size.tiny)
+    else if trailStage < 1 and profit >= trig1
+        stopLevel  := entryPrice - initialSL + raise1   // step1: raise by raise1
+        trailStage := 1
+        if showDebug
+            label.new(bar_index, high, "Step1 SL→" + str.tostring(math.round(stopLevel, 2)),
+                      color=color.teal, textcolor=color.white,
+                      style=label.style_label_down, size=size.tiny)
+
+// ─── EXIT: stop hit ──────────────────────────────────────────────────────────
+longExit = inTrade and low <= stopLevel
+
+if longExit
+    if isNifty or isSensex
+        strategy.close("Long", comment="exit", alert_message=exitMsg)
+    else
+        strategy.close("Long")
+    entryPrice := na
+    stopLevel  := na
+    trailStage := 0
+
+// ─── VISUALS ─────────────────────────────────────────────────────────────────
+plot(stopLevel, "Stop Level", color=color.red, style=plot.style_linebr, linewidth=2)
+plot(not inTrade and not na(armedLevel) ? armedLevel : na, "Armed Entry Level",
+     color=color.orange, style=plot.style_linebr, linewidth=1)
+
+plotshape(longEntry, title="Entry", location=location.belowbar,
+          style=shape.triangleup, color=color.green, size=size.small)
+plotshape(longExit, title="Exit", location=location.abovebar,
+          style=shape.xcross, color=color.red, size=size.small)
+
+// Debug: mark detected pattern candles when flat (explain-why)
+bgcolor(showDebug and patternCandle and not inTrade ? color.new(color.green, 85) : na,
+        title="Pattern candle")
+
+// ─── ALERTS (optional, in addition to strategy webhook messages) ─────────────
+alertcondition(longEntry, title="Bullish Entry", message="Bullish pattern breakout — long entry")
+alertcondition(longExit,  title="Stop Exit",     message="Stop hit — long exit")

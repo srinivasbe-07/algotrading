@@ -1,0 +1,652 @@
+//@version=6
+indicator("VWAP + SMC (trend=VWAP, entry=OB/FVG/Sweep)", overlay=true, max_boxes_count = 500, max_labels_count = 500, max_lines_count = 500)
+
+//  STRATEGY
+//  --------
+//  • TREND / BIAS  = VWAP.  close > VWAP → long-only (buy CE).
+//                           close < VWAP → short-only (buy PE).
+//  • ENTRY LOCATION (either one counts):
+//       bullish Order-Block tap  OR  bullish FVG tap  OR  sell-side
+//       liquidity SWEEP (wick below SSL, close back above) → bottom zone.
+//       Mirror for shorts (bearish OB / bearish FVG / BSL sweep).
+//  • ENTRY TRIGGER = CONFIRMED REVERSAL: after a bottom zone is tapped/swept,
+//       enter on the first BULLISH close (close>open) still above VWAP,
+//       within `armExpiry` bars. Mirror for shorts.
+//  • EXIT = price closes back across VWAP (long exits when close < VWAP).
+//       Fixed SL is handled BROKER-SIDE (15 pt Nifty / 35 pt Sensex) — not here.
+//  • ALERTS = entry + exit per side (set them "Once Per Bar").
+//
+//  NOTE: Parts 1-4 below build the swings → market structure → order blocks
+//  (OBs are generated on a BOS/CHoCH, so Part 2 must stay). VWAP — not the
+//  structure trend — is what gates the actual entries.
+
+// ── Display toggles ───────────────────────────────────────────────
+showSwings = input.bool(false, "Show raw swing H/L labels")
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 1 — Swing Highs & Lows
+// ══════════════════════════════════════════════════════════════════
+
+isInside  = high < high[1] and low > low[1]
+isBullish = not isInside and close > open
+isBearish = not isInside and close < open
+
+pivotLow  = ta.pivotlow(low,  1, 1)
+pivotHigh = ta.pivothigh(high, 1, 1)
+
+var float   pendingLow      = na
+var int     pendingLowBar   = -1
+var int     bullAfterLow    = 0
+var float   maxHighSinceLow = na
+var label[] bullCountLabels = array.new<label>()
+
+var float   pendingHigh     = na
+var int     pendingHighBar  = -1
+var int     bearAfterHigh   = 0
+var float   minLowSinceHigh = na
+var label[] bearCountLabels = array.new<label>()
+
+var int     maxSwings       = 5
+var float[] swingHighPrices = array.new<float>()
+var int[]   swingHighBars   = array.new<int>()
+var float[] swingLowPrices  = array.new<float>()
+var int[]   swingLowBars    = array.new<int>()
+
+// Minor (raw) pivots — used by Part 4 for liquidity-grab detection
+var int     maxMinor        = 10
+var float[] minorHighPrices = array.new<float>()
+var int[]   minorHighBars   = array.new<int>()
+var float[] minorLowPrices  = array.new<float>()
+var int[]   minorLowBars    = array.new<int>()
+
+var bool swingLowJustConfirmed  = false
+var bool swingHighJustConfirmed = false
+swingLowJustConfirmed  := false
+swingHighJustConfirmed := false
+
+if not na(pivotHigh)
+    array.unshift(minorHighPrices, pivotHigh)
+    array.unshift(minorHighBars,   bar_index[1])
+    if array.size(minorHighPrices) > maxMinor
+        array.pop(minorHighPrices)
+        array.pop(minorHighBars)
+if not na(pivotLow)
+    array.unshift(minorLowPrices, pivotLow)
+    array.unshift(minorLowBars,   bar_index[1])
+    if array.size(minorLowPrices) > maxMinor
+        array.pop(minorLowPrices)
+        array.pop(minorLowBars)
+
+if not na(pendingLow) and close < pendingLow
+    for lbl in bullCountLabels
+        label.delete(lbl)
+    array.clear(bullCountLabels)
+    pendingLow      := na
+    pendingLowBar   := -1
+    bullAfterLow    := 0
+    maxHighSinceLow := na
+
+if not na(pendingHigh) and close > pendingHigh
+    for lbl in bearCountLabels
+        label.delete(lbl)
+    array.clear(bearCountLabels)
+    pendingHigh     := na
+    pendingHighBar  := -1
+    bearAfterHigh   := 0
+    minLowSinceHigh := na
+
+if not na(pivotLow) and (na(pendingLow) or pivotLow < pendingLow)
+    if not na(pendingLow)
+        for lbl in bullCountLabels
+            label.delete(lbl)
+        array.clear(bullCountLabels)
+    pendingLow      := pivotLow
+    pendingLowBar   := bar_index[1]
+    maxHighSinceLow := high[1]
+    bullAfterLow    := 0
+    if close[1] > open[1]
+        bullAfterLow := 1
+
+if not na(pivotHigh) and (na(pendingHigh) or pivotHigh > pendingHigh)
+    if not na(pendingHigh)
+        for lbl in bearCountLabels
+            label.delete(lbl)
+        array.clear(bearCountLabels)
+    pendingHigh     := pivotHigh
+    pendingHighBar  := bar_index[1]
+    minLowSinceHigh := low[1]
+    bearAfterHigh   := 0
+    if close[1] < open[1]
+        bearAfterHigh := 1
+
+if not na(pendingLow)
+    if isBullish and close > maxHighSinceLow
+        bullAfterLow    += 1
+        maxHighSinceLow := high
+        if bullAfterLow >= 3
+            if showSwings
+                label.new(pendingLowBar, pendingLow, "L",
+                          color=color.new(color.white,100), textcolor=color.red,
+                          size=size.normal, style=label.style_none, yloc=yloc.belowbar)
+            array.unshift(swingLowPrices, pendingLow)
+            array.unshift(swingLowBars,   pendingLowBar)
+            if array.size(swingLowPrices) > maxSwings
+                array.pop(swingLowPrices)
+                array.pop(swingLowBars)
+            array.clear(bullCountLabels)
+            swingLowJustConfirmed := true
+            pendingLow      := na
+            pendingLowBar   := -1
+            bullAfterLow    := 0
+            maxHighSinceLow := na
+    else
+        maxHighSinceLow := math.max(maxHighSinceLow, high)
+
+if not na(pendingHigh)
+    if isBearish and close < minLowSinceHigh
+        bearAfterHigh   += 1
+        minLowSinceHigh := low
+        if bearAfterHigh >= 3
+            if showSwings
+                label.new(pendingHighBar, pendingHigh, "H",
+                          color=color.new(color.white,100), textcolor=color.green,
+                          size=size.normal, style=label.style_none, yloc=yloc.abovebar)
+            array.unshift(swingHighPrices, pendingHigh)
+            array.unshift(swingHighBars,   pendingHighBar)
+            if array.size(swingHighPrices) > maxSwings
+                array.pop(swingHighPrices)
+                array.pop(swingHighBars)
+            array.clear(bearCountLabels)
+            swingHighJustConfirmed := true
+            pendingHigh     := na
+            pendingHighBar  := -1
+            bearAfterHigh   := 0
+            minLowSinceHigh := na
+    else
+        minLowSinceHigh := math.min(minLowSinceHigh, low)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 2 — Market Structure (BOS / CHoCH)  → drives OB creation below
+// ══════════════════════════════════════════════════════════════════
+
+colBOS       = input.color(color.blue,  "BOS label",                       group = "Structure")
+colUp        = input.color(color.green, "Bullish level / CHoCH",           group = "Structure")
+colDown      = input.color(color.red,   "Bearish level / CHoCH",           group = "Structure")
+showStructHL = input.bool(false, "Show structure H/L labels",              group = "Structure")
+showStructLn = input.bool(false, "Show BOS/CHoCH lines",                   group = "Structure")
+
+var string trend             = "none"
+var float  refHigh           = na
+var float  refLow            = na
+var int    refHighBar        = -1
+var int    refLowBar         = -1
+var int    eventBar          = -1
+var bool   waitingForRefHigh = false
+var bool   waitingForRefLow  = false
+var label  refHighLbl        = na
+var label  refLowLbl         = na
+var int    obBaseBar         = -1
+
+if trend == "none" and array.size(swingHighPrices) > 0 and array.size(swingLowPrices) > 0
+    refHigh    := array.get(swingHighPrices, 0)
+    refHighBar := array.get(swingHighBars,   0)
+    refLow     := array.get(swingLowPrices,  0)
+    refLowBar  := array.get(swingLowBars,    0)
+    trend      := refHighBar > refLowBar ? "up" : "down"
+    if showStructHL
+        refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+        refLowLbl  := label.new(refLowBar,  refLow,  "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+
+if waitingForRefHigh and swingHighJustConfirmed and array.size(swingHighBars) > 0 and array.get(swingHighBars, 0) > eventBar
+    refHigh           := array.get(swingHighPrices, 0)
+    refHighBar        := array.get(swingHighBars,   0)
+    waitingForRefHigh := false
+    if showStructHL
+        refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+
+if waitingForRefLow and swingLowJustConfirmed and array.size(swingLowBars) > 0 and array.get(swingLowBars, 0) > eventBar
+    refLow           := array.get(swingLowPrices, 0)
+    refLowBar        := array.get(swingLowBars,   0)
+    waitingForRefLow := false
+    if showStructHL
+        refLowLbl := label.new(refLowBar, refLow, "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+
+bool   eventFired = false
+bool   goingUp    = false
+string eventType  = ""
+
+if trend != "none"
+    if not na(refHigh) and close > refHigh
+        eventFired := true
+        goingUp    := true
+        eventType  := trend == "up" ? "BOS" : "CHoCH"
+    if not na(refLow) and close < refLow
+        eventFired := true
+        goingUp    := false
+        eventType  := trend == "down" ? "BOS" : "CHoCH"
+
+if eventFired
+    if showStructLn
+        col          = eventType == "BOS" ? colBOS : (goingUp ? colUp : colDown)
+        float lvl    = goingUp ? refHigh : refLow
+        int   lvlBar = goingUp ? refHighBar : refLowBar
+        int   midBar = int(math.avg(lvlBar, bar_index))
+        line.new(lvlBar, lvl, bar_index, lvl, color = col, width = 2, style = line.style_dotted)
+        label.new(midBar, lvl, eventType, color = color.new(color.white, 100), textcolor = col, size = size.small, style = label.style_none)
+
+    eventBar := bar_index
+
+    if goingUp
+        trend := "up"
+        float scanLow    = low
+        int   scanLowBar = bar_index
+        for i = 0 to bar_index - refHighBar
+            if low[i] < scanLow
+                scanLow    := low[i]
+                scanLowBar := bar_index - i
+        refLow    := scanLow
+        refLowBar := scanLowBar
+        obBaseBar := scanLowBar
+        if showStructHL
+            refLowLbl := label.new(refLowBar, refLow, "L", color = color.new(color.white, 100), textcolor = colDown, size = size.small, style = label.style_none, yloc = yloc.belowbar)
+        refHigh           := na
+        refHighBar        := -1
+        refHighLbl        := na
+        waitingForRefHigh := true
+        waitingForRefLow  := false
+    else
+        trend := "down"
+        float scanHigh    = high
+        int   scanHighBar = bar_index
+        for i = 0 to bar_index - refLowBar
+            if high[i] > scanHigh
+                scanHigh    := high[i]
+                scanHighBar := bar_index - i
+        refHigh    := scanHigh
+        refHighBar := scanHighBar
+        obBaseBar  := scanHighBar
+        if showStructHL
+            refHighLbl := label.new(refHighBar, refHigh, "H", color = color.new(color.white, 100), textcolor = colUp, size = size.small, style = label.style_none, yloc = yloc.abovebar)
+        refLow            := na
+        refLowBar         := -1
+        refLowLbl         := na
+        waitingForRefLow  := true
+        waitingForRefHigh := false
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 4 — Order Blocks (OB)   (entry trigger #1)
+// ══════════════════════════════════════════════════════════════════
+
+showAplus   = input.bool(true,  "Show A+ order blocks",       group = "Order Blocks")
+showRegular = input.bool(true,  "Show regular order blocks",  group = "Order Blocks")
+colBull     = input.color(color.new(color.blue,   80), "Bullish OB fill",   group = "Order Blocks")
+colBullBrd  = input.color(color.new(color.blue,   30), "Bullish OB border", group = "Order Blocks")
+colBear     = input.color(color.new(color.orange, 80), "Bearish OB fill",   group = "Order Blocks")
+colBearBrd  = input.color(color.new(color.orange, 30), "Bearish OB border", group = "Order Blocks")
+colTap      = input.color(color.orange,               "Tapped outline",     group = "Order Blocks")
+colBroken   = input.color(color.new(color.gray, 85),  "Broken OB",          group = "Order Blocks")
+maxOBs      = input.int(12, "Max OB boxes",         minval = 1, group = "Order Blocks")
+obExtend    = input.int(10, "OB box extend (bars)", minval = 0, group = "Order Blocks")
+obLookback  = input.int(50, "OB liquidity search lookback (bars)", minval = 5, group = "Order Blocks")
+hideBroken  = input.bool(false, "Hide broken OBs",  group = "Order Blocks")
+dbgOB       = input.bool(false, "DEBUG: outline every break's OB + A+/REG tag + leg FVG", group = "Order Blocks")
+
+type ob
+    float top
+    float bottom
+    int   bias          // 1 = bullish, -1 = bearish
+    bool  aplus
+    box   bx
+    int   baseBar = -1
+    bool  tapped  = false
+    bool  broken  = false
+
+var ob[] obs = array.new<ob>()
+
+trimOB() =>
+    while array.size(obs) > maxOBs
+        old = array.shift(obs)
+        box.delete(old.bx)
+
+makeOB(int b, bool up) =>
+    if b < bar_index and bar_index - b <= obLookback
+        int   candOff = bar_index - b
+        bool  found   = false
+        int   dispOff = -1
+        float ft = na
+        float fb = na
+        int   fl = -1
+        int   fr = -1
+        for o = candOff - 1 to 0
+            if not found
+                bool gap2 = up ? high[o + 1] < low[o] : low[o + 1] > high[o]
+                bool fvg3 = false
+                if o + 2 <= candOff
+                    fvg3 := up ? high[o + 2] < low[o] : low[o + 2] > high[o]
+                if gap2
+                    found   := true
+                    dispOff := o + 1
+                    ft := up ? low[o] : low[o + 1]
+                    fb := up ? high[o + 1] : high[o]
+                    fl := bar_index - (o + 1)
+                    fr := bar_index - o
+                else if fvg3
+                    found   := true
+                    dispOff := o + 2
+                    ft := up ? low[o] : low[o + 2]
+                    fb := up ? high[o + 2] : high[o]
+                    fl := bar_index - (o + 2)
+                    fr := bar_index - o
+        if found
+            int obCandOff = dispOff
+            for x = dispOff to math.min(bar_index, candOff + 5)
+                if (up ? close[x] < open[x] : close[x] > open[x])
+                    obCandOff := x
+                    break
+            int   obBar = bar_index - obCandOff
+            float ot    = high[obCandOff]
+            float obb   = low[obCandOff]
+            bool overlap = false
+            if array.size(obs) > 0
+                for i = 0 to array.size(obs) - 1
+                    ob ex = array.get(obs, i)
+                    if not ex.broken and ex.bias == (up ? 1 : -1) and obb <= ex.top and ex.bottom <= ot
+                        overlap := true
+                        break
+            if not overlap
+                bool  liq = false
+                if up
+                    if array.size(minorLowPrices) > 0
+                        for kk = 0 to array.size(minorLowPrices) - 1
+                            if array.get(minorLowBars, kk) < obBar
+                                liq := obb < array.get(minorLowPrices, kk)
+                                break
+                else
+                    if array.size(minorHighPrices) > 0
+                        for kk = 0 to array.size(minorHighPrices) - 1
+                            if array.get(minorHighBars, kk) < obBar
+                                liq := ot > array.get(minorHighPrices, kk)
+                                break
+                bool  show = liq ? showAplus : showRegular
+                color bc   = show ? (up ? colBull : colBear)       : color(na)
+                color brc  = show ? (up ? colBullBrd : colBearBrd) : color(na)
+                box   bxx  = box.new(obBar, ot, bar_index + obExtend, obb, border_color = brc, border_width = liq ? 2 : 1, bgcolor = bc)
+                array.push(obs, ob.new(ot, obb, up ? 1 : -1, liq, bxx, obBar))
+                trimOB()
+                if dbgOB
+                    box.new(obBar, ot, bar_index, obb, border_color = up ? color.green : color.red, border_width = 1, border_style = line.style_dashed, bgcolor = color(na))
+                    box.new(fl, ft, fr, fb, border_color = color.new(color.blue, 0), border_width = 1, bgcolor = color.new(color.blue, 80))
+                    string tg = (liq ? "A+" : "REG") + " liq" + (liq ? "✓" : "✗") + " fvg✓"
+                    label.new(obBar, up ? obb : ot, tg, color = color.new(color.black, 100), textcolor = liq ? color.green : color.gray, style = up ? label.style_label_up : label.style_label_down, size = size.small)
+
+if eventFired
+    if goingUp
+        if array.size(minorLowBars) > 0
+            for k = 0 to array.size(minorLowBars) - 1
+                makeOB(array.get(minorLowBars, k), true)
+    else
+        if array.size(minorHighBars) > 0
+            for k = 0 to array.size(minorHighBars) - 1
+                makeOB(array.get(minorHighBars, k), false)
+
+// ── Per-bar entry-candidate edges (far edge of a zone tapped THIS bar) ──
+float longEdge  = na      // bottom of a bullish zone tapped this bar
+float shortEdge = na      // top of a bearish zone tapped this bar
+
+// ── OB state transitions: tap (first touch) → break (close through) ──
+if array.size(obs) > 0
+    for i = array.size(obs) - 1 to 0
+        o = array.get(obs, i)
+        if not o.broken
+            box.set_right(o.bx, bar_index + obExtend)
+            if not o.tapped and high >= o.bottom and low <= o.top
+                o.tapped := true
+                box.set_border_color(o.bx, colTap)
+                box.set_border_width(o.bx, 2)
+                if o.bias == 1 and na(longEdge)
+                    longEdge := o.bottom
+                if o.bias == -1 and na(shortEdge)
+                    shortEdge := o.top
+            bool brk = o.bias == 1 ? close < o.bottom : close > o.top
+            if brk
+                o.broken := true
+                if hideBroken
+                    box.delete(o.bx)
+                    array.remove(obs, i)
+                else
+                    box.set_bgcolor(o.bx, colBroken)
+                    box.set_border_color(o.bx, color.new(color.gray, 60))
+                    box.set_right(o.bx, bar_index)
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 3 (lean) — Fair Value Gaps   (entry trigger #2)
+// ══════════════════════════════════════════════════════════════════
+showFVG    = input.bool(true, "Show FVG boxes",        group = "FVG")
+colFvgBull = input.color(color.new(color.green, 80), "Bullish FVG", group = "FVG")
+colFvgBear = input.color(color.new(color.red,   80), "Bearish FVG", group = "FVG")
+maxFVG     = input.int(10, "Max FVG boxes",   minval = 1, group = "FVG")
+fvgExtend  = input.int(10, "FVG extend (bars)", minval = 0, group = "FVG")
+
+type fvg
+    float top
+    float bottom
+    int   bias          // 1 = bullish, -1 = bearish
+    box   bx
+    bool  tapped    = false
+    bool  mitigated = false
+
+var fvg[] fvgs = array.new<fvg>()
+
+trimFVG() =>
+    while array.size(fvgs) > maxFVG
+        old = array.shift(fvgs)
+        box.delete(old.bx)
+
+bullFvg = low > high[2]
+bearFvg = high < low[2]
+if bullFvg
+    float t = low
+    float b = high[2]
+    box bx = showFVG ? box.new(bar_index - 2, t, bar_index + fvgExtend, b, border_color = na, bgcolor = colFvgBull) : na
+    array.push(fvgs, fvg.new(t, b, 1, bx))
+    trimFVG()
+if bearFvg
+    float t = low[2]
+    float b = high
+    box bx = showFVG ? box.new(bar_index - 2, t, bar_index + fvgExtend, b, border_color = na, bgcolor = colFvgBear) : na
+    array.push(fvgs, fvg.new(t, b, -1, bx))
+    trimFVG()
+
+if array.size(fvgs) > 0
+    for i = array.size(fvgs) - 1 to 0
+        f = array.get(fvgs, i)
+        if not f.mitigated
+            if showFVG and not na(f.bx)
+                box.set_right(f.bx, bar_index + fvgExtend)
+            if not f.tapped and high >= f.bottom and low <= f.top
+                f.tapped := true
+                if f.bias == 1 and na(longEdge)
+                    longEdge := f.bottom
+                if f.bias == -1 and na(shortEdge)
+                    shortEdge := f.top
+            bool mit = f.bias == 1 ? close < f.bottom : close > f.top
+            if mit
+                f.mitigated := true
+                if showFVG and not na(f.bx)
+                    box.set_bgcolor(f.bx, color.new(color.gray, 85))
+
+// ══════════════════════════════════════════════════════════════════
+//  PART 5.1 (lean) — Swing Liquidity sweeps   (entry trigger #3)
+//
+//  Each confirmed swing HIGH leaves buy-side liquidity (BSL) above it;
+//  each confirmed swing LOW leaves sell-side liquidity (SSL) below it.
+//  SWEEP = wick trades THROUGH the level but the candle CLOSES back on the
+//  original side (stop-hunt). An SSL sweep is BULLISH (arm long); a BSL
+//  sweep is BEARISH (arm short).
+// ══════════════════════════════════════════════════════════════════
+showLiq   = input.bool(true,  "Show BSL/SSL lines",  group = "Liquidity")
+colBSL    = input.color(color.new(color.teal,   0), "BSL line",        group = "Liquidity")
+colSSL    = input.color(color.new(color.maroon, 0), "SSL line",        group = "Liquidity")
+colTaken  = input.color(color.new(color.gray,  40), "Taken liquidity", group = "Liquidity")
+colSweep  = input.color(color.new(color.orange, 0), "Sweep marker",    group = "Liquidity")
+maxLiq    = input.int(12, "Max liquidity lines", minval = 1, group = "Liquidity")
+
+type liq
+    float level
+    int   bias          // 1 = BSL (above a high), -1 = SSL (below a low)
+    line  ln
+    bool  taken = false
+
+var liq[] liqs = array.new<liq>()
+
+trimLiq() =>
+    while array.size(liqs) > maxLiq
+        old = array.shift(liqs)
+        line.delete(old.ln)
+
+if swingHighJustConfirmed and array.size(swingHighPrices) > 0
+    lvl = array.get(swingHighPrices, 0)
+    bar = array.get(swingHighBars,   0)
+    ln  = showLiq ? line.new(bar, lvl, bar_index, lvl, color = colBSL, width = 1) : na
+    array.push(liqs, liq.new(lvl, 1, ln))
+    trimLiq()
+
+if swingLowJustConfirmed and array.size(swingLowPrices) > 0
+    lvl = array.get(swingLowPrices, 0)
+    bar = array.get(swingLowBars,   0)
+    ln  = showLiq ? line.new(bar, lvl, bar_index, lvl, color = colSSL, width = 1) : na
+    array.push(liqs, liq.new(lvl, -1, ln))
+    trimLiq()
+
+// Per-bar sweep events feeding the entry arming below
+bool  bullSweep = false   // SSL swept & reclaimed → bullish
+bool  bearSweep = false   // BSL swept & reclaimed → bearish
+float bullSweepLow  = na  // sweep wick low  (long SL reference)
+float bearSweepHigh = na  // sweep wick high (short SL reference)
+
+if array.size(liqs) > 0
+    for i = array.size(liqs) - 1 to 0
+        l = array.get(liqs, i)
+        if not l.taken
+            if showLiq and not na(l.ln)
+                line.set_x2(l.ln, bar_index)
+            bool taken = l.bias == 1 ? high > l.level : low < l.level
+            if taken
+                l.taken := true
+                bool sweep = l.bias == 1 ? close < l.level : close > l.level
+                if sweep
+                    if l.bias == -1
+                        bullSweep    := true
+                        bullSweepLow := low
+                    else
+                        bearSweep     := true
+                        bearSweepHigh := high
+                    label.new(bar_index, l.bias == 1 ? high : low, "x", color = color(na), textcolor = colSweep, style = l.bias == 1 ? label.style_label_down : label.style_label_up, size = size.tiny)
+                if showLiq and not na(l.ln)
+                    line.set_color(l.ln, colTaken)
+                    line.set_style(l.ln, line.style_dotted)
+                    line.set_x2(l.ln, bar_index)
+
+// ══════════════════════════════════════════════════════════════════
+//  VWAP — trend / bias
+// ══════════════════════════════════════════════════════════════════
+vwapSrc = input.source(hlc3, "VWAP source", group = "VWAP")
+vwap    = ta.vwap(vwapSrc)
+biasUp   = close > vwap
+biasDown = close < vwap
+plot(vwap, "VWAP", color = color.new(color.aqua, 0), linewidth = 2)
+bgcolor(biasUp ? color.new(color.green, 94) : biasDown ? color.new(color.red, 94) : na, title = "VWAP bias background")
+
+// ══════════════════════════════════════════════════════════════════
+//  SIGNAL LOGIC — VWAP bias + zone tap/sweep + confirmed reversal
+//
+//  ARM   : a bottom zone is tapped/swept while biasUp   → pendingLong
+//          a top    zone is tapped/swept while biasDown → pendingShort
+//  ENTER : pending + first bullish/bearish CLOSE still on the bias side,
+//          within `armExpiry` bars.  One trade at a time.
+//  EXIT  : close back across VWAP.   SL = fixed, broker-side.
+// ══════════════════════════════════════════════════════════════════
+grpS       = "Signals"
+tradeLong  = input.bool(true,  "Allow long (BUY / CE)",   group = grpS)
+tradeShort = input.bool(true,  "Allow short (SELL / PE)", group = grpS)
+armExpiry  = input.int(3, "Arm window after tap/sweep (bars)", minval = 0, group = grpS)
+dbgSig     = input.bool(false, "DEBUG: mark armed bars + SL reference", group = grpS)
+
+// Combined per-bar triggers (either OB tap, FVG tap, or liquidity sweep)
+bool  longTrigger  = not na(longEdge)  or bullSweep
+bool  shortTrigger = not na(shortEdge) or bearSweep
+float longRef      = not na(longEdge)  ? longEdge  : bullSweepLow      // long SL reference
+float shortRef     = not na(shortEdge) ? shortEdge : bearSweepHigh     // short SL reference
+
+var int   pos             = 0     // 0 flat, 1 long, -1 short
+var bool  pendingLong     = false
+var int   pendingLongBar  = -1
+var float pendingLongRef  = na
+var bool  pendingShort    = false
+var int   pendingShortBar = -1
+var float pendingShortRef = na
+
+// ── Arm on a fresh trigger that agrees with VWAP bias ─────────────
+if longTrigger and biasUp
+    pendingLong    := true
+    pendingLongBar := bar_index
+    pendingLongRef := longRef
+if shortTrigger and biasDown
+    pendingShort    := true
+    pendingShortBar := bar_index
+    pendingShortRef := shortRef
+
+// ── Cancel a stale / invalidated arm before evaluating entry ──────
+if pendingLong and (biasDown or bar_index - pendingLongBar > armExpiry)
+    pendingLong := false
+if pendingShort and (biasUp or bar_index - pendingShortBar > armExpiry)
+    pendingShort := false
+
+if dbgSig and pendingLong
+    label.new(bar_index, low, "armL", color = color(na), textcolor = color.green, style = label.style_label_up, size = size.tiny)
+if dbgSig and pendingShort
+    label.new(bar_index, high, "armS", color = color(na), textcolor = color.red, style = label.style_label_down, size = size.tiny)
+
+// ── Entry (only when flat) — confirmed reversal candle ────────────
+bool enterLong  = false
+bool enterShort = false
+if pos == 0
+    if tradeLong and pendingLong and close > open and biasUp
+        enterLong := true
+    else if tradeShort and pendingShort and close < open and biasDown
+        enterShort := true
+
+if enterLong
+    pos          := 1
+    pendingLong  := false
+    pendingShort := false
+    label.new(bar_index, low, "BUY\nSL " + (na(pendingLongRef) ? "-" : str.tostring(pendingLongRef, format.mintick)), color = color.new(color.green, 0), textcolor = color.white, style = label.style_label_up, size = size.small)
+else if enterShort
+    pos          := -1
+    pendingLong  := false
+    pendingShort := false
+    label.new(bar_index, high, "SELL\nSL " + (na(pendingShortRef) ? "-" : str.tostring(pendingShortRef, format.mintick)), color = color.new(color.red, 0), textcolor = color.white, style = label.style_label_down, size = size.small)
+
+// ── Exit — close back across VWAP (SL is broker-side) ─────────────
+bool exitLong  = false
+bool exitShort = false
+if pos == 1 and not enterLong and biasDown
+    exitLong := true
+    pos      := 0
+    label.new(bar_index, high, "EXIT", color = color.new(color.gray, 0), textcolor = color.white, style = label.style_label_down, size = size.tiny)
+if pos == -1 and not enterShort and biasUp
+    exitShort := true
+    pos       := 0
+    label.new(bar_index, low, "EXIT", color = color.new(color.gray, 0), textcolor = color.white, style = label.style_label_up, size = size.tiny)
+
+// ── Entry/exit markers ────────────────────────────────────────────
+plotshape(enterLong,  title = "Long Entry",  style = shape.triangleup,   location = location.belowbar, color = color.green, size = size.small)
+plotshape(enterShort, title = "Short Entry", style = shape.triangledown, location = location.abovebar, color = color.red,   size = size.small)
+
+// ══════════════════════════════════════════════════════════════════
+//  ALERTS — entry + exit per side (set each to "Once Per Bar")
+// ══════════════════════════════════════════════════════════════════
+alertcondition(enterLong,  "Long Entry (BUY)",    "VWAP-SMC: BUY")
+alertcondition(enterShort, "Short Entry (SELL)",  "VWAP-SMC: SELL")
+alertcondition(exitLong,   "Long Exit (CLOSE)",   "VWAP-SMC: CLOSE LONG")
+alertcondition(exitShort,  "Short Exit (CLOSE)",  "VWAP-SMC: CLOSE SHORT")
