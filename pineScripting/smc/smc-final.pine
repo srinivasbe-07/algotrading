@@ -1,5 +1,5 @@
 //@version=6
-indicator("SMC Part 7 - Signals", overlay=true, max_boxes_count = 500, max_labels_count = 500, max_lines_count = 500)
+indicator("SMC - Final", overlay=true, max_boxes_count = 500, max_labels_count = 500, max_lines_count = 500)
 
 // ── Display toggles ───────────────────────────────────────────────
 showSwings = input.bool(false, "Show raw swing H/L labels")
@@ -278,297 +278,254 @@ if eventFired
 bgcolor(showTrendBg ? (trend == "up" ? color.new(colUp, 92) : trend == "down" ? color.new(colDown, 92) : na) : na)
 
 // ══════════════════════════════════════════════════════════════════
-//  PART 4 — Order Blocks (OB)   (trigger for Part 7 entries)
+//  SHARED — LuxAlgo volatility model (parsedHigh / parsedLow)
+//  Used by Order Blocks; high-volatility bars use the opposite wick.
 // ══════════════════════════════════════════════════════════════════
+atrMeasure        = ta.atr(200)
 
-// ── Inputs ────────────────────────────────────────────────────────
-showAplus   = input.bool(true,  "Show A+ order blocks",       group = "Order Blocks")
-showRegular = input.bool(true,  "Show regular order blocks",  group = "Order Blocks")
-colBull     = input.color(color.new(color.blue,   80), "Bullish OB fill",   group = "Order Blocks")
-colBullBrd  = input.color(color.new(color.blue,   30), "Bullish OB border", group = "Order Blocks")
-colBear     = input.color(color.new(color.orange, 80), "Bearish OB fill",   group = "Order Blocks")
-colBearBrd  = input.color(color.new(color.orange, 30), "Bearish OB border", group = "Order Blocks")
-colTap      = input.color(color.orange,               "Tapped outline",     group = "Order Blocks")
-colBroken   = input.color(color.new(color.gray, 85),  "Broken OB",          group = "Order Blocks")
-maxOBs      = input.int(12, "Max OB boxes",         minval = 1, group = "Order Blocks")
-obExtend    = input.int(10, "OB box extend (bars)", minval = 0, group = "Order Blocks")
-obLookback  = input.int(50, "OB liquidity search lookback (bars)", minval = 5, group = "Order Blocks")
-hideBroken  = input.bool(false, "Hide broken OBs",  group = "Order Blocks")
-dbgOB       = input.bool(false, "DEBUG: outline every break's OB + A+/REG tag + leg FVG", group = "Order Blocks")
+// ══════════════════════════════════════════════════════════════════
+//  PART 4 — Order Blocks (LuxAlgo style)
+//  • One OB stored per structure break, anchored to the leg's volatility
+//    -adjusted extreme candle (LuxAlgo storeOrdeBlock min/max selection).
+//  • Box extends right; removed on mitigation (LuxAlgo deleteOrderBlocks).
+// ══════════════════════════════════════════════════════════════════
+grpOB        = "Order Blocks"
+showOB       = input.bool(true,    "Show order blocks",                                 group = grpOB)
+obCount      = input.int(5,        "Order blocks to show",  minval = 1, maxval = 20,    group = grpOB)
+obFilter     = input.string("Atr", "Order block filter",    options = ["Atr", "Cumulative Mean Range"], group = grpOB)
+obMitigation = input.string("High/Low", "Order block mitigation", options = ["Close", "High/Low"],      group = grpOB)
+colBullOB    = input.color(color.new(#1848cc, 80), "Bullish OB", group = grpOB)
+colBearOB    = input.color(color.new(#b22833, 80), "Bearish OB", group = grpOB)
 
-// ── Type: one tracked Order Block ─────────────────────────────────
+volatilityMeasure = obFilter == "Atr" ? atrMeasure : ta.cum(ta.tr) / bar_index
+
+// @type   one tracked order block
 type ob
     float top
     float bottom
     int   bias          // 1 = bullish, -1 = bearish
-    bool  aplus
     box   bx
-    int   baseBar = -1
-    bool  tapped  = false
-    bool  broken  = false
 
 var ob[] obs = array.new<ob>()
 
-trimOB() =>
-    while array.size(obs) > maxOBs
-        old = array.shift(obs)
+// On each structure break, store ONE OB at the leg's parsed extreme candle
+if eventFired and showOB and obBaseBar >= 0
+    int   baseOff   = bar_index - obBaseBar
+    bool  volBar    = (high[baseOff] - low[baseOff]) >= 2 * volatilityMeasure[baseOff]
+    float obTop     = volBar ? low[baseOff]  : high[baseOff]   // LuxAlgo parsedHigh
+    float obBot     = volBar ? high[baseOff] : low[baseOff]    // LuxAlgo parsedLow
+    color obCol     = goingUp ? colBullOB : colBearOB
+    box   obBx      = box.new(obBaseBar, obTop, bar_index, obBot, border_color = obCol, bgcolor = obCol)
+    array.unshift(obs, ob.new(obTop, obBot, goingUp ? 1 : -1, obBx))
+    while array.size(obs) > obCount
+        old = array.pop(obs)
         box.delete(old.bx)
 
-makeOB(int b, bool up) =>
-    if b < bar_index and bar_index - b <= obLookback
-        int   candOff = bar_index - b
-        bool  found   = false
-        int   dispOff = -1
-        float ft = na
-        float fb = na
-        int   fl = -1
-        int   fr = -1
-        for o = candOff - 1 to 0
-            if not found
-                bool gap2 = up ? high[o + 1] < low[o] : low[o + 1] > high[o]
-                bool fvg3 = false
-                if o + 2 <= candOff
-                    fvg3 := up ? high[o + 2] < low[o] : low[o + 2] > high[o]
-                if gap2
-                    found   := true
-                    dispOff := o + 1
-                    ft := up ? low[o] : low[o + 1]
-                    fb := up ? high[o + 1] : high[o]
-                    fl := bar_index - (o + 1)
-                    fr := bar_index - o
-                else if fvg3
-                    found   := true
-                    dispOff := o + 2
-                    ft := up ? low[o] : low[o + 2]
-                    fb := up ? high[o + 2] : high[o]
-                    fl := bar_index - (o + 2)
-                    fr := bar_index - o
-        if found
-            int obCandOff = dispOff
-            for x = dispOff to math.min(bar_index, candOff + 5)
-                if (up ? close[x] < open[x] : close[x] > open[x])
-                    obCandOff := x
-                    break
-            int   obBar = bar_index - obCandOff
-            float ot    = high[obCandOff]
-            float obb   = low[obCandOff]
-            bool overlap = false
-            if array.size(obs) > 0
-                for i = 0 to array.size(obs) - 1
-                    ob ex = array.get(obs, i)
-                    if not ex.broken and ex.bias == (up ? 1 : -1) and obb <= ex.top and ex.bottom <= ot
-                        overlap := true
-                        break
-            if not overlap
-                bool  liq = false
-                if up
-                    if array.size(minorLowPrices) > 0
-                        for kk = 0 to array.size(minorLowPrices) - 1
-                            if array.get(minorLowBars, kk) < obBar
-                                liq := obb < array.get(minorLowPrices, kk)
-                                break
-                else
-                    if array.size(minorHighPrices) > 0
-                        for kk = 0 to array.size(minorHighPrices) - 1
-                            if array.get(minorHighBars, kk) < obBar
-                                liq := ot > array.get(minorHighPrices, kk)
-                                break
-                bool  show = liq ? showAplus : showRegular
-                color bc   = show ? (up ? colBull : colBear)       : color(na)
-                color brc  = show ? (up ? colBullBrd : colBearBrd) : color(na)
-                box   bxx  = box.new(obBar, ot, bar_index + obExtend, obb, border_color = brc, border_width = liq ? 2 : 1, bgcolor = bc)
-                array.push(obs, ob.new(ot, obb, up ? 1 : -1, liq, bxx, obBar))
-                trimOB()
-                if dbgOB
-                    box.new(obBar, ot, bar_index, obb, border_color = up ? color.green : color.red, border_width = 1, border_style = line.style_dashed, bgcolor = color(na))
-                    box.new(fl, ft, fr, fb, border_color = color.new(color.blue, 0), border_width = 1, bgcolor = color.new(color.blue, 80))
-                    string tg = (liq ? "A+" : "REG") + " liq" + (liq ? "✓" : "✗") + " fvg✓"
-                    label.new(obBar, up ? obb : ot, tg, color = color.new(color.black, 100), textcolor = liq ? color.green : color.gray, style = up ? label.style_label_up : label.style_label_down, size = size.small)
-
-// On a break, (re)build the STACK of OBs at recent pullbacks
-if eventFired
-    if goingUp
-        if array.size(minorLowBars) > 0
-            for k = 0 to array.size(minorLowBars) - 1
-                makeOB(array.get(minorLowBars, k), true)
-    else
-        if array.size(minorHighBars) > 0
-            for k = 0 to array.size(minorHighBars) - 1
-                makeOB(array.get(minorHighBars, k), false)
-
-// ── Per-bar entry-candidate edges (far edge of a zone tapped THIS bar) ──
-float longEdge  = na      // bottom of a bullish zone tapped this bar (= long SL)
-float shortEdge = na      // top of a bearish zone tapped this bar (= short SL)
-
-// ── OB state transitions: tap (first touch) → break (close through) ──
+// ── OB extend + mitigation (LuxAlgo removal) ──
+bearMitSrc = obMitigation == "Close" ? close : high
+bullMitSrc = obMitigation == "Close" ? close : low
 if array.size(obs) > 0
     for i = array.size(obs) - 1 to 0
         o = array.get(obs, i)
-        if not o.broken
-            box.set_right(o.bx, bar_index + obExtend)
-            if not o.tapped and high >= o.bottom and low <= o.top
-                o.tapped := true
-                box.set_border_color(o.bx, colTap)
-                box.set_border_width(o.bx, 2)
-                if o.bias == 1 and na(longEdge)
-                    longEdge := o.bottom
-                if o.bias == -1 and na(shortEdge)
-                    shortEdge := o.top
-            bool brk = o.bias == 1 ? close < o.bottom : close > o.top
-            if brk
-                o.broken := true
-                if hideBroken
-                    box.delete(o.bx)
-                    array.remove(obs, i)
-                else
-                    box.set_bgcolor(o.bx, colBroken)
-                    box.set_border_color(o.bx, color.new(color.gray, 60))
-                    box.set_right(o.bx, bar_index)
+        box.set_right(o.bx, bar_index)
+        bool mit = o.bias == -1 ? bearMitSrc > o.top : bullMitSrc < o.bottom
+        if mit
+            box.delete(o.bx)
+            array.remove(obs, i)
 
 // ══════════════════════════════════════════════════════════════════
-//  PART 3 (lean) — Fair Value Gaps   (second entry trigger)
+//  PART 3 — Fair Value Gaps (LuxAlgo style)   (second entry trigger)
+//  • 3-candle gap with auto volatility threshold filter.
+//  • Two stacked boxes split at the midpoint (LuxAlgo look).
+//  • Removed on mitigation (LuxAlgo deleteFairValueGaps).
 // ══════════════════════════════════════════════════════════════════
-showFVG    = input.bool(true, "Show FVG boxes",        group = "FVG")
-colFvgBull = input.color(color.new(color.green, 80), "Bullish FVG", group = "FVG")
-colFvgBear = input.color(color.new(color.red,   80), "Bearish FVG", group = "FVG")
-maxFVG     = input.int(10, "Max FVG boxes",   minval = 1, group = "FVG")
-fvgExtend  = input.int(10, "FVG extend (bars)", minval = 0, group = "FVG")
+grpFVG     = "Fair Value Gaps"
+showFVG    = input.bool(true, "Show FVG",                       group = grpFVG)
+fvgAuto    = input.bool(true, "Auto threshold",                 group = grpFVG)
+fvgExtend  = input.int(10,    "Extend FVG (bars)", minval = 0,  group = grpFVG)
+colFvgBull = input.color(color.new(#00ff68, 70), "Bullish FVG", group = grpFVG)
+colFvgBear = input.color(color.new(#ff0008, 70), "Bearish FVG", group = grpFVG)
 
+// @type   one tracked fair value gap.  `bottom` = the far protective edge.
 type fvg
     float top
     float bottom
     int   bias          // 1 = bullish, -1 = bearish
-    box   bx
-    bool  tapped    = false
-    bool  mitigated = false
+    box   bx1
+    box   bx2
 
 var fvg[] fvgs = array.new<fvg>()
 
-trimFVG() =>
-    while array.size(fvgs) > maxFVG
-        old = array.shift(fvgs)
-        box.delete(old.bx)
+delta        = (close[1] - open[1]) / (open[1] * 100)
+fvgThreshold = fvgAuto ? ta.cum(math.abs(delta)) / bar_index * 2 : 0.0
+bullFvg      = low  > high[2] and close[1] > high[2] and  delta > fvgThreshold
+bearFvg      = high < low[2]  and close[1] < low[2]  and -delta > fvgThreshold
 
-// 3-candle gap on the current bar
-bullFvg = low > high[2]
-bearFvg = high < low[2]
-if bullFvg
-    float t = low
-    float b = high[2]
-    box bx = showFVG ? box.new(bar_index - 2, t, bar_index + fvgExtend, b, border_color = na, bgcolor = colFvgBull) : na
-    array.push(fvgs, fvg.new(t, b, 1, bx))
-    trimFVG()
-if bearFvg
-    float t = low[2]
-    float b = high
-    box bx = showFVG ? box.new(bar_index - 2, t, bar_index + fvgExtend, b, border_color = na, bgcolor = colFvgBear) : na
-    array.push(fvgs, fvg.new(t, b, -1, bx))
-    trimFVG()
+if showFVG and bullFvg
+    float t = low                       // upper edge
+    float b = high[2]                   // lower edge (far edge for a long)
+    float m = math.avg(t, b)
+    box   b1 = box.new(bar_index - 1, t, bar_index + fvgExtend, m, border_color = na, bgcolor = colFvgBull)
+    box   b2 = box.new(bar_index - 1, m, bar_index + fvgExtend, b, border_color = na, bgcolor = colFvgBull)
+    array.unshift(fvgs, fvg.new(t, b, 1, b1, b2))
+    while array.size(fvgs) > 20
+        old = array.pop(fvgs)
+        box.delete(old.bx1)
+        box.delete(old.bx2)
+if showFVG and bearFvg
+    float t = high                      // lower edge
+    float b = low[2]                    // upper edge (far edge for a short)
+    float m = math.avg(t, b)
+    box   b1 = box.new(bar_index - 1, t, bar_index + fvgExtend, m, border_color = na, bgcolor = colFvgBear)
+    box   b2 = box.new(bar_index - 1, m, bar_index + fvgExtend, b, border_color = na, bgcolor = colFvgBear)
+    array.unshift(fvgs, fvg.new(t, b, -1, b1, b2))
+    while array.size(fvgs) > 20
+        old = array.pop(fvgs)
+        box.delete(old.bx1)
+        box.delete(old.bx2)
 
-// Extend live FVGs; first tap feeds the entry edges; mitigation greys them
+// ── FVG mitigation (LuxAlgo removal) ──
 if array.size(fvgs) > 0
     for i = array.size(fvgs) - 1 to 0
         f = array.get(fvgs, i)
-        if not f.mitigated
-            if showFVG and not na(f.bx)
-                box.set_right(f.bx, bar_index + fvgExtend)
-            if not f.tapped and high >= f.bottom and low <= f.top
-                f.tapped := true
-                if f.bias == 1 and na(longEdge)
-                    longEdge := f.bottom
-                if f.bias == -1 and na(shortEdge)
-                    shortEdge := f.top
-            bool mit = f.bias == 1 ? close < f.bottom : close > f.top
-            if mit
-                f.mitigated := true
-                if showFVG and not na(f.bx)
-                    box.set_bgcolor(f.bx, color.new(color.gray, 85))
+        bool mit = f.bias == 1 ? low < f.bottom : high > f.top
+        if mit
+            box.delete(f.bx1)
+            box.delete(f.bx2)
+            array.remove(fvgs, i)
 
 // ══════════════════════════════════════════════════════════════════
-//  PART 6 (lean) — Equilibrium for premium/discount filter
-//  Frozen structure range (Option A): refresh only when both ends valid.
+//  PART 5 — Liquidity (LuxAlgo style): EQH/EQL + Strong/Weak High & Low
 // ══════════════════════════════════════════════════════════════════
-var float rngHigh = na
-var float rngLow  = na
-if not na(refHigh) and not na(refLow)
-    rngHigh := refHigh
-    rngLow  := refLow
-float eq = (not na(rngHigh) and not na(rngLow)) ? math.avg(rngHigh, rngLow) : na
-plot(eq, "Equilibrium", color = color.new(color.gray, 40), style = plot.style_stepline)
+grpLiq   = "Liquidity"
+showEqHL = input.bool(true,  "Show EQH / EQL",               group = grpLiq)
+eqLen    = input.int(3,      "EQH/EQL bars", minval = 1,     group = grpLiq)
+eqThresh = input.float(0.1,  "EQH/EQL threshold", minval = 0, maxval = 0.5, step = 0.1, group = grpLiq)
+showSWHL = input.bool(true,  "Show strong / weak high & low", group = grpLiq)
+
+// ── EQH / EQL ──
+phEq = ta.pivothigh(eqLen, eqLen)
+plEq = ta.pivotlow(eqLen, eqLen)
+var float lastEqHigh    = na
+var int   lastEqHighBar = na
+var float lastEqLow     = na
+var int   lastEqLowBar  = na
+if showEqHL and not na(phEq)
+    if not na(lastEqHigh) and math.abs(phEq - lastEqHigh) < eqThresh * atrMeasure
+        line.new(lastEqHighBar, lastEqHigh, bar_index - eqLen, phEq, color = colDown, style = line.style_dotted)
+        label.new(int(math.avg(lastEqHighBar, bar_index - eqLen)), phEq, "EQH", color = color.new(color.white, 100), textcolor = colDown, style = label.style_label_down, size = size.tiny)
+    lastEqHigh    := phEq
+    lastEqHighBar := bar_index - eqLen
+if showEqHL and not na(plEq)
+    if not na(lastEqLow) and math.abs(plEq - lastEqLow) < eqThresh * atrMeasure
+        line.new(lastEqLowBar, lastEqLow, bar_index - eqLen, plEq, color = colUp, style = line.style_dotted)
+        label.new(int(math.avg(lastEqLowBar, bar_index - eqLen)), plEq, "EQL", color = color.new(color.white, 100), textcolor = colUp, style = label.style_label_up, size = size.tiny)
+    lastEqLow    := plEq
+    lastEqLowBar := bar_index - eqLen
+
+// ── Trailing extremes (reset to confirmed swing, then ratchet) ──
+var float trTop    = na
+var int   trTopBar = na
+var float trBot    = na
+var int   trBotBar = na
+if swingHighJustConfirmed and array.size(swingHighPrices) > 0
+    trTop    := array.get(swingHighPrices, 0)
+    trTopBar := array.get(swingHighBars,   0)
+if swingLowJustConfirmed and array.size(swingLowPrices) > 0
+    trBot    := array.get(swingLowPrices, 0)
+    trBotBar := array.get(swingLowBars,   0)
+if na(trTop) or high > trTop
+    trTop    := high
+    trTopBar := bar_index
+if na(trBot) or low < trBot
+    trBot    := low
+    trBotBar := bar_index
+
+// ── Strong / Weak High & Low (redrawn on the last bar) ──
+var line  swTopLine = na
+var label swTopLbl  = na
+var line  swBotLine = na
+var label swBotLbl  = na
+if showSWHL and barstate.islast and not na(trTop) and not na(trBot)
+    line.delete(swTopLine)
+    label.delete(swTopLbl)
+    line.delete(swBotLine)
+    label.delete(swBotLbl)
+    int rightBar = bar_index + 10
+    swTopLine := line.new(trTopBar, trTop, rightBar, trTop, color = colDown)
+    swTopLbl  := label.new(rightBar, trTop, trend == "down" ? "Strong High" : "Weak High", color = color.new(color.white, 100), textcolor = colDown, style = label.style_label_down, size = size.tiny)
+    swBotLine := line.new(trBotBar, trBot, rightBar, trBot, color = colUp)
+    swBotLbl  := label.new(rightBar, trBot, trend == "up" ? "Strong Low" : "Weak Low", color = color.new(color.white, 100), textcolor = colUp, style = label.style_label_up, size = size.tiny)
 
 // ══════════════════════════════════════════════════════════════════
-//  PART 7 — Signal Logic & Alerts
-//
-//  Balanced confluence:
-//    LONG  = trend up   + bullish OB/FVG tapped + tap in DISCOUNT (close < eq)
-//    SHORT = trend down + bearish OB/FVG tapped + tap in PREMIUM  (close > eq)
-//  SL  = structural (far edge of the tapped zone).
-//  TGT = fixed R:R of the SL distance.
-//  One trade at a time; whichever of SL / TGT hits first closes it.
-//  Three alert messages: entry (BUY/SELL), SL, target.
+//  PART 6 — Premium / Discount Zones (LuxAlgo style) from trailing extremes
+//  + frozen-range equilibrium used by the Part 7 confluence filter.
 // ══════════════════════════════════════════════════════════════════
-grp7       = "Signals"
-tradeLong  = input.bool(true,  "Allow long (BUY)",  group = grp7)
-tradeShort = input.bool(true,  "Allow short (SELL)", group = grp7)
-rrRatio    = input.float(2.0,  "Target reward:risk", minval = 0.1, step = 0.1, group = grp7)
-msgBuy     = input.string("SMC: BUY",        "Long entry alert",  group = grp7)
-msgSell    = input.string("SMC: SELL",       "Short entry alert", group = grp7)
-msgSL      = input.string("SMC: SL HIT",     "Stop-loss alert",   group = grp7)
-msgTgt     = input.string("SMC: TARGET HIT", "Target alert",      group = grp7)
+grpPD   = "Premium / Discount Zones"
+showPD  = input.bool(false, "Show premium / discount zones",       group = grpPD)
+colPrem = input.color(color.new(color.red,  80), "Premium Zone",     group = grpPD)
+colEqui = input.color(color.new(color.gray, 80), "Equilibrium Zone", group = grpPD)
+colDisc = input.color(color.new(color.green,80), "Discount Zone",    group = grpPD)
 
-var int   pos     = 0        // 0 flat, 1 long, -1 short
-var float entryPx = na
-var float slPx    = na
-var float tgtPx   = na
-var line  slLine  = na
-var line  tgtLine = na
+var box   premBox = na
+var box   equiBox = na
+var box   discBox = na
+var label premLbl = na
+var label equiLbl = na
+var label discLbl = na
+if showPD and barstate.islast and not na(trTop) and not na(trBot)
+    box.delete(premBox)
+    box.delete(equiBox)
+    box.delete(discBox)
+    label.delete(premLbl)
+    label.delete(equiLbl)
+    label.delete(discLbl)
+    int   leftBar = math.min(trTopBar, trBotBar)
+    float eqLevel = math.avg(trTop, trBot)
+    premBox := box.new(leftBar, trTop,                       bar_index, 0.95 * trTop + 0.05 * trBot, bgcolor = colPrem, border_color = na)
+    equiBox := box.new(leftBar, 0.525 * trTop + 0.475 * trBot, bar_index, 0.525 * trBot + 0.475 * trTop, bgcolor = colEqui, border_color = na)
+    discBox := box.new(leftBar, 0.95 * trBot + 0.05 * trTop, bar_index, trBot,                       bgcolor = colDisc, border_color = na)
+    premLbl := label.new(bar_index, trTop,    "Premium",     color = color.new(color.white, 100), textcolor = color.red,  style = label.style_label_down, size = size.small)
+    equiLbl := label.new(bar_index, eqLevel,  "Equilibrium", color = color.new(color.white, 100), textcolor = color.gray, style = label.style_label_left, size = size.small)
+    discLbl := label.new(bar_index, trBot,    "Discount",    color = color.new(color.white, 100), textcolor = color.green,style = label.style_label_up,   size = size.small)
 
-bool enteredThisBar = false
+// ══════════════════════════════════════════════════════════════════
+//  Highs & Lows MTF (LuxAlgo style) — previous Day / Week / Month H & L
+// ══════════════════════════════════════════════════════════════════
+grpMTF = "Highs & Lows MTF"
+showD  = input.bool(false, "Daily",   group = grpMTF, inline = "d")
+showW  = input.bool(false, "Weekly",  group = grpMTF, inline = "w")
+showM  = input.bool(false, "Monthly", group = grpMTF, inline = "m")
+colMTF = input.color(color.new(#2157f3, 0), "Levels color", group = grpMTF)
 
-// ── ENTRY (only when flat) ────────────────────────────────────────
-if pos == 0 and not na(eq)
-    if tradeLong and not na(longEdge) and trend == "up" and close < eq and close > longEdge
-        pos            := 1
-        entryPx        := close
-        slPx           := longEdge
-        tgtPx          := close + rrRatio * (close - longEdge)
-        enteredThisBar := true
-        alert(msgBuy, alert.freq_once_per_bar)
-        label.new(bar_index, low, "BUY\nSL "  + str.tostring(slPx, format.mintick) + "\nTGT " + str.tostring(tgtPx, format.mintick),
-                  color = color.new(color.green, 0), textcolor = color.white, style = label.style_label_up, size = size.small)
-        slLine  := line.new(bar_index, slPx,  bar_index, slPx,  color = color.red,   style = line.style_dotted)
-        tgtLine := line.new(bar_index, tgtPx, bar_index, tgtPx, color = color.green, style = line.style_dotted)
-    else if tradeShort and not na(shortEdge) and trend == "down" and close > eq and close < shortEdge
-        pos            := -1
-        entryPx        := close
-        slPx           := shortEdge
-        tgtPx          := close - rrRatio * (shortEdge - close)
-        enteredThisBar := true
-        alert(msgSell, alert.freq_once_per_bar)
-        label.new(bar_index, high, "SELL\nSL " + str.tostring(slPx, format.mintick) + "\nTGT " + str.tostring(tgtPx, format.mintick),
-                  color = color.new(color.red, 0), textcolor = color.white, style = label.style_label_down, size = size.small)
-        slLine  := line.new(bar_index, slPx,  bar_index, slPx,  color = color.red,   style = line.style_dotted)
-        tgtLine := line.new(bar_index, tgtPx, bar_index, tgtPx, color = color.green, style = line.style_dotted)
+[dH, dL] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[wH, wL] = request.security(syminfo.tickerid, "W", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[mH, mL] = request.security(syminfo.tickerid, "M", [high[1], low[1]], lookahead = barmerge.lookahead_on)
 
-// ── EXIT (in trade; not the same bar we entered) ──────────────────
-if pos != 0 and not enteredThisBar
-    line.set_x2(slLine,  bar_index)
-    line.set_x2(tgtLine, bar_index)
-    if pos == 1
-        if low <= slPx
-            alert(msgSL, alert.freq_once_per_bar)
-            label.new(bar_index, slPx, "SL", color = color.new(color.red, 0), textcolor = color.white, style = label.style_label_up, size = size.tiny)
-            pos := 0
-        else if high >= tgtPx
-            alert(msgTgt, alert.freq_once_per_bar)
-            label.new(bar_index, tgtPx, "TGT", color = color.new(color.green, 0), textcolor = color.white, style = label.style_label_down, size = size.tiny)
-            pos := 0
-    else
-        if high >= slPx
-            alert(msgSL, alert.freq_once_per_bar)
-            label.new(bar_index, slPx, "SL", color = color.new(color.red, 0), textcolor = color.white, style = label.style_label_down, size = size.tiny)
-            pos := 0
-        else if low <= tgtPx
-            alert(msgTgt, alert.freq_once_per_bar)
-            label.new(bar_index, tgtPx, "TGT", color = color.new(color.green, 0), textcolor = color.white, style = label.style_label_up, size = size.tiny)
-            pos := 0
+drawMTF(bool show, float hi, float lo, color c, string tag) =>
+    var line  hLine = na
+    var line  lLine = na
+    var label hLbl  = na
+    var label lLbl  = na
+    if show and barstate.islast
+        line.delete(hLine)
+        line.delete(lLine)
+        label.delete(hLbl)
+        label.delete(lLbl)
+        int L = bar_index - 60
+        int R = bar_index + 20
+        hLine := line.new(L, hi, R, hi, color = c, style = line.style_solid)
+        lLine := line.new(L, lo, R, lo, color = c, style = line.style_solid)
+        hLbl  := label.new(R, hi, "P" + tag + "H", color = color.new(color.white, 100), textcolor = c, style = label.style_label_left, size = size.small)
+        lLbl  := label.new(R, lo, "P" + tag + "L", color = color.new(color.white, 100), textcolor = c, style = label.style_label_left, size = size.small)
+
+drawMTF(showD, dH, dL, colMTF, "D")
+drawMTF(showW, wH, wL, colMTF, "W")
+drawMTF(showM, mH, mL, colMTF, "M")
+
+// ══════════════════════════════════════════════════════════════════
+//  Signals/alerts removed — this is a pure visualization indicator.
+//  To re-add later: gate entries on `trend` ("up"/"down") plus an OB/FVG
+//  zone tap, with structural SL + R:R target. (The old longEdge/shortEdge
+//  tap-feed and frozen-range equilibrium were removed in this cleanup.)
+// ══════════════════════════════════════════════════════════════════
